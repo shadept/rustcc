@@ -43,8 +43,12 @@ pub enum Symbol {
     Semicolon,
     Colon,
     Dot,
-    Minus,
     Tilde,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
     MinusMinus,
 }
 
@@ -53,16 +57,20 @@ impl Display for Symbol {
         let glyph = match self {
             Symbol::OpenParen => "(",
             Symbol::CloseParen => ")",
-            Symbol::OpenBrace => "{{",
-            Symbol::CloseBrace => "}}",
+            Symbol::OpenBrace => "{",
+            Symbol::CloseBrace => "}",
             Symbol::OpenBracket => "[",
             Symbol::CloseBracket => "]",
             Symbol::Comma => ",",
             Symbol::Semicolon => ";",
             Symbol::Colon => ":",
             Symbol::Dot => ".",
-            Symbol::Minus => "-",
             Symbol::Tilde => "~",
+            Symbol::Plus => "+",
+            Symbol::Minus => "-",
+            Symbol::Star => "*",
+            Symbol::Slash => "/",
+            Symbol::Percent => "%",
             Symbol::MinusMinus => "--",
         };
         write!(f, "{}", glyph)

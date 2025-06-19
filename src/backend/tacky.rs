@@ -1,5 +1,5 @@
 ﻿use crate::frontend::ast;
-use crate::frontend::ast::{ExprKind, StmtKind, UnaryOp};
+use crate::frontend::ast::{BinaryOp, ExprKind, StmtKind, UnaryOp};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +33,7 @@ impl Function {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    Binary(BinaryOperator, Val, Val, Val),
     Return(Val),
     Unary(UnaryOperator, Val, Val), // cannot assign to Constant
 }
@@ -47,6 +48,36 @@ pub enum Val {
 pub enum UnaryOperator {
     Complement,
     Negate,
+}
+
+impl From<UnaryOp> for UnaryOperator {
+    fn from(value: UnaryOp) -> Self {
+        match value {
+            UnaryOp::Complement => UnaryOperator::Complement,
+            UnaryOp::Negate => UnaryOperator::Negate,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+impl From<BinaryOp> for BinaryOperator {
+    fn from(value: BinaryOp) -> Self {
+        match value {
+            BinaryOp::Add => BinaryOperator::Add,
+            BinaryOp::Subtract => BinaryOperator::Subtract,
+            BinaryOp::Multiply => BinaryOperator::Multiply,
+            BinaryOp::Divide => BinaryOperator::Divide,
+            BinaryOp::Remainder => BinaryOperator::Remainder,
+        }
+    }
 }
 
 pub fn emit_tacky(program: ast::Program) -> Program {
@@ -71,18 +102,15 @@ fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
 fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val {
     use crate::backend::tacky::Val::{Constant, Var};
     match expr.kind {
-        ExprKind::Constant(c) => Constant(c),
-        ExprKind::Unary(op, inner) => {
-            let src = emit_tacky_expr(*inner, instructions);
+        ExprKind::Binary(op, left, right) => {
+            let left = emit_tacky_expr(*left, instructions);
+            let right = emit_tacky_expr(*right, instructions);
             let dst_name = make_temporary();
             let dst = Var(dst_name);
-            let tacky_op = match op {
-                UnaryOp::Comp => UnaryOperator::Complement,
-                UnaryOp::Neg => UnaryOperator::Negate,
-            };
-            instructions.push(Instruction::Unary(tacky_op, src, dst.clone()));
+            instructions.push(Instruction::Binary(op.into(), left, right, dst.clone()));
             dst
         }
+        ExprKind::Constant(c) => Constant(c),
         ExprKind::Return(maybe_inner) => {
             let src = match maybe_inner {
                 Some(inner) => emit_tacky_expr(*inner, instructions),
@@ -90,6 +118,13 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             };
             instructions.push(Instruction::Return(src.clone()));
             src
+        }
+        ExprKind::Unary(op, inner) => {
+            let src = emit_tacky_expr(*inner, instructions);
+            let dst_name = make_temporary();
+            let dst = Var(dst_name);
+            instructions.push(Instruction::Unary(op.into(), src, dst.clone()));
+            dst
         }
     }
 }

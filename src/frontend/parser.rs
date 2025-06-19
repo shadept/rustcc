@@ -1,4 +1,4 @@
-﻿use crate::frontend::ast::{Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
+﻿use crate::frontend::ast::{BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
 use crate::frontend::parser::ParserError::UnexpectedToken;
 use crate::frontend::token::{Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
@@ -77,10 +77,12 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         let ret: Result<Stmt, ParserError>;
         if let Some((_, span)) = match_keyword!(self, Keyword::Return) {
-            let expr = self.parse_return()?;
+            let expr1 = self.parse_expression(0)?;
+            let span1 = expr1.span;
+            let expr = Expr::new(ExprKind::Return(Some(Box::from(expr1))), span1);
             ret = Ok(Stmt::new(StmtKind::Expr(Box::from(expr)), span));
         } else {
-            let expr = self.parse_expression()?;
+            let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
             ret = Ok(Stmt::new(StmtKind::Expr(Box::new(expr)), span))
         }
@@ -88,45 +90,83 @@ impl Parser {
         ret
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, ParserError> {
-        self.parse_unary()
-    }
-
-    fn parse_unary(&mut self) -> Result<Expr, ParserError> {
-        if let Some((sym, span)) = match_symbol!(self, Symbol::Minus, Symbol::Tilde) {
-            let op = match sym {
-                Symbol::Minus => UnaryOp::Neg,
-                Symbol::Tilde => UnaryOp::Comp,
-                _ => unreachable!(),
-            };
-            let expr = self.parse_unary()?;
-            Ok(Expr::new(ExprKind::Unary(op, expr.into()), span))
-        } else {
-            self.parse_primary()
+    fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParserError> {
+        let mut left = self.parse_factor()?;
+        loop {
+            if let Some(token) = self.peek() {
+                if let Some(op) = self.parse_binary_op(&token) {
+                    let precedence = self.binop_precedence(&op);
+                    if precedence >= min_precedence {
+                        self.advance().unwrap();
+                        let right = self.parse_expression(precedence + 1)?;
+                        let span = left.span + right.span;
+                        left = Expr::new(ExprKind::Binary(op, left.into(), right.into()), span);
+                        continue;
+                    }
+                }
+            }
+            break Ok(left);
         }
     }
 
-    fn parse_return(&mut self) -> Result<Expr, ParserError> {
-        // self.consume_keyword(Keyword::Return)?;
-        let expr = self.parse_expression()?;
-        let span = expr.span;
-        Ok(Expr::new(ExprKind::Return(Some(Box::from(expr))), span))
-    }
-
-    fn parse_primary(&mut self) -> Result<Expr, ParserError> {
+    fn parse_factor(&mut self) -> Result<Expr, ParserError> {
         let token = self.peek().ok_or(ParserError::EOT)?;
         match token.kind {
-            TokenKind::Symbol(Symbol::OpenParen) => {
-                self.advance().unwrap();
-                let expr = self.parse_expression()?;
-                self.expect_symbol(Symbol::CloseParen)?;
-                Ok(expr)
-            }
             TokenKind::IntNumber(n, _) => {
                 self.advance().unwrap();
                 Ok(Expr::new(ExprKind::Constant(n as i32), token.span))
             }
+            TokenKind::Symbol(Symbol::Tilde) | TokenKind::Symbol(Symbol::Minus) => {
+                let token = self.advance().unwrap();
+                let op = self.parse_unary_op(&token).unwrap();
+                let expr = self.parse_factor()?;
+                let span = expr.span + token.span;
+                Ok(Expr::new(ExprKind::Unary(op, expr.into()), span))
+            }
+            TokenKind::Symbol(Symbol::OpenParen) => {
+                self.advance().unwrap();
+                let expr = self.parse_expression(0)?;
+                self.expect_symbol(Symbol::CloseParen)?;
+                Ok(expr)
+            }
             _ => Err(UnexpectedToken(token)),
+        }
+    }
+
+    fn parse_unary_op(&self, token: &Token) -> Option<UnaryOp> {
+        if let TokenKind::Symbol(sym) = &token.kind {
+            match sym {
+                Symbol::Minus => Some(UnaryOp::Negate),
+                Symbol::Tilde => Some(UnaryOp::Complement),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn parse_binary_op(&self, token: &Token) -> Option<BinaryOp> {
+        if let TokenKind::Symbol(sym) = &token.kind {
+            match sym {
+                Symbol::Plus => Some(BinaryOp::Add),
+                Symbol::Minus => Some(BinaryOp::Subtract),
+                Symbol::Star => Some(BinaryOp::Multiply),
+                Symbol::Slash => Some(BinaryOp::Divide),
+                Symbol::Percent => Some(BinaryOp::Remainder),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn binop_precedence(&self, op: &BinaryOp) -> u8 {
+        match op {
+            BinaryOp::Add => 45,
+            BinaryOp::Subtract => 45,
+            BinaryOp::Multiply => 50,
+            BinaryOp::Divide => 50,
+            BinaryOp::Remainder => 50,
         }
     }
 

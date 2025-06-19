@@ -23,7 +23,10 @@ pub type Block = Vec<Stmt>;
 
 impl Function {
     pub fn new(name: String, body: Block) -> Self {
-        Self { name, body: Some(body) }
+        Self {
+            name,
+            body: Some(body),
+        }
     }
 }
 
@@ -46,15 +49,25 @@ impl Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Constant(i32),
-    Unary(UnaryOp, Box<Expr>),
     Return(Option<Box<Expr>>),
+    Unary(UnaryOp, Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
-    Neg,
-    Comp,
+    Complement,
+    Negate,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 
 #[derive(Debug, Clone, PartialEq)]

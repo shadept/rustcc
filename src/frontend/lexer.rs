@@ -23,11 +23,24 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    pub fn to_tokens(mut self) -> Result<Vec<Token>, LexerError> {
+        let mut tokens = Vec::new();
+        loop {
+            let res = self.next_token();
+            match res {
+                Ok(token) => tokens.push(token),
+                Err(LexerError::EOF(_)) => break,
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(tokens)
+    }
+
     pub fn next_token(&mut self) -> Result<Token, LexerError> {
         self.skip_trivia();
         self.start = self.index;
         if self.is_eof() {
-            return Err(LexerError::EOF);
+            return Err(LexerError::EOF(self.create_span()));
         }
 
         let ch = self.advance().unwrap();
@@ -39,6 +52,8 @@ impl<'src> Lexer<'src> {
             '[' => self.create_token_from_symbol(Symbol::OpenBracket),
             ']' => self.create_token_from_symbol(Symbol::CloseBracket),
             ';' => self.create_token_from_symbol(Symbol::Semicolon),
+            '~' => self.create_token_from_symbol(Symbol::Tilde),
+            '+' => self.create_token_from_symbol(Symbol::Plus),
             '-' => {
                 let sym = if self.match_char('-') {
                     Symbol::MinusMinus
@@ -47,10 +62,12 @@ impl<'src> Lexer<'src> {
                 };
                 self.create_token_from_symbol(sym)
             }
-            '~' => self.create_token_from_symbol(Symbol::Tilde),
+            '*' => self.create_token_from_symbol(Symbol::Star),
+            '/' => self.create_token_from_symbol(Symbol::Slash),
+            '%' => self.create_token_from_symbol(Symbol::Percent),
             ch if ch.is_digit(10) => self.parse_number(),
             ch if ch.is_alphabetic() => self.parse_identifier_or_keyword(),
-            _ => return Err(LexerError::UnexpectedToken),
+            _ => return Err(LexerError::UnexpectedToken(self.create_span())),
         };
 
         Ok(token)
@@ -65,6 +82,15 @@ impl<'src> Lexer<'src> {
                 self.advance();
                 while let Some(c) = self.advance() {
                     if c == '\n' {
+                        break;
+                    }
+                }
+            } else if c == '/' && self.peek2() == Some('*') {
+                self.advance();
+                self.advance();
+                while let Some(c) = self.advance() {
+                    if c == '*' && self.peek() == Some('/') {
+                        self.advance();
                         break;
                     }
                 }
@@ -106,8 +132,12 @@ impl<'src> Lexer<'src> {
         &self.src[self.start..self.index]
     }
 
+    fn create_span(&mut self) -> Span {
+        Span::new(self.start, self.index)
+    }
+
     fn create_token(&mut self, kind: TokenKind) -> Token {
-        let span = Span::new(self.start, self.index);
+        let span = self.create_span();
         let token = Token { kind, span };
         token
     }
@@ -126,19 +156,11 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        if self.peek() != Some('.') {
-            let number = self
-                .current_lexeme()
-                .parse::<i64>()
-                .expect("Failed to parse number");
-            return self.create_token(TokenKind::IntNumber(number, Bits::from(number)));
-        }
-        // TODO parse rest of float
         let number = self
             .current_lexeme()
-            .parse::<f64>()
+            .parse::<i64>()
             .expect("Failed to parse number");
-        self.create_token(TokenKind::FloatNumber(number))
+        self.create_token(TokenKind::IntNumber(number, Bits::from(number)))
     }
 
     fn parse_identifier_or_keyword(&mut self) -> Token {
@@ -159,24 +181,17 @@ impl<'src> Lexer<'src> {
     }
 }
 
-impl<'src> Iterator for Lexer<'src> {
-    type Item = Token;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token().ok()
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexerError {
-    UnexpectedToken,
-    EOF,
+    UnexpectedToken(Span),
+    EOF(Span),
 }
 
 impl Display for LexerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            LexerError::UnexpectedToken => write!(f, "Unexpected token"),
-            LexerError::EOF => write!(f, "End of file"),
+            LexerError::UnexpectedToken(span) => write!(f, "Unexpected token @ {span:?}"),
+            LexerError::EOF(span) => write!(f, "End of file @ {span:?}"),
         }
     }
 }

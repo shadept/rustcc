@@ -1,7 +1,10 @@
 mod backend;
 mod frontend;
 
+use crate::backend::assembler;
+use crate::backend::assembler::assemble;
 use crate::backend::codegen::codegen;
+use crate::backend::tacky::emit_tacky;
 use crate::frontend::ast::Program;
 use crate::frontend::lexer::Lexer;
 use crate::frontend::parser::{Parser, ParserError};
@@ -12,9 +15,6 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Write, stdout};
 use std::process::Command;
-use crate::backend::assembler;
-use crate::backend::assembler::assemble;
-use crate::backend::tacky::emit_tacky;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 enum CommandArg {
@@ -83,14 +83,15 @@ fn main() -> Result<(), anyhow::Error> {
             // dbg!(&program);
             if command >= CommandArg::Tacky {
                 let tacky = emit_tacky(program);
-                dbg!(&tacky);
+                // dbg!(&tacky);
                 // misnomer
                 if command >= CommandArg::Codegen {
                     let assembly = assemble(tacky);
-                    dbg!(&assembly);
+                    // dbg!(&assembly);
                     if command >= CommandArg::CodeEmit {
                         let assembly_file = input_file.replace(".c", ".s");
-                        run_codegen(assembly, &assembly_file)?;
+                        let executable_file = input_file.replace(".c", "");
+                        run_codegen(assembly, &assembly_file, &executable_file)?;
                     }
                 }
             }
@@ -100,7 +101,7 @@ fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn run_lexer(input_file: &str, preprocessed_file: &str) -> io::Result<Vec<Token>> {
+fn run_lexer(input_file: &str, preprocessed_file: &str) -> anyhow::Result<Vec<Token>> {
     let mut file: File;
     if cfg!(windows) {
         file = File::open(input_file)?;
@@ -132,7 +133,7 @@ fn run_lexer(input_file: &str, preprocessed_file: &str) -> io::Result<Vec<Token>
 
     let src = buffer.as_str();
     let lexer = Lexer::new(src);
-    let tokens = lexer.collect::<Vec<_>>();
+    let tokens = lexer.to_tokens()?;
     Ok(tokens)
 }
 
@@ -142,18 +143,22 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, ParserError> {
     Ok(program)
 }
 
-fn run_codegen(assembly: assembler::Program, assembly_file: &str) -> io::Result<()> {
+fn run_codegen(
+    assembly: assembler::Program,
+    assembly_file: &str,
+    executable_file: &str,
+) -> io::Result<()> {
     let code = codegen(assembly);
     File::create(assembly_file)?.write_all(code.as_bytes())?;
 
-    // Command::new("clang")
-    //     .args(["-S", assembly_file, "-o", assembly_file])
-    //     .spawn()?
-    //     .wait()?;
-    // 
-    // if false {
-    //     std::fs::remove_file(assembly_file)?;
-    // }
+    Command::new("clang")
+        .args([assembly_file, "-o", executable_file, "-arch", "x86_64"])
+        .spawn()?
+        .wait()?;
+
+    if false {
+        std::fs::remove_file(assembly_file)?;
+    }
 
     Ok(())
 }

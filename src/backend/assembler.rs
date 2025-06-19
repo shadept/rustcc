@@ -34,6 +34,9 @@ pub enum Inst {
     /// Src, Dst
     Mov(Operand, Operand),
     Unary(UnaryOperator, Operand),
+    Binary(BinaryOperator, Operand, Operand),
+    Idiv(Operand),
+    Cdq,
     AllocateStack(i32),
     Ret,
 }
@@ -54,6 +57,26 @@ impl From<tacky::UnaryOperator> for UnaryOperator {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+}
+
+impl From<tacky::BinaryOperator> for BinaryOperator {
+    fn from(value: tacky::BinaryOperator) -> Self {
+        match value {
+            tacky::BinaryOperator::Add => BinaryOperator::Add,
+            tacky::BinaryOperator::Subtract => BinaryOperator::Sub,
+            tacky::BinaryOperator::Multiply => BinaryOperator::Mul,
+            tacky::BinaryOperator::Divide | tacky::BinaryOperator::Remainder => {
+                unreachable!("Divide and Remainder must be handled separately")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
     Imm(i32),
     Pseudo(String),
@@ -64,7 +87,9 @@ pub enum Operand {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Register {
     AX,
+    DX,
     R10,
+    R11,
 }
 
 pub fn assemble(program: tacky::Program) -> Program {
@@ -77,6 +102,7 @@ fn assemble_function(function: tacky::Function) -> Function {
         assemble_instruction(instruction, &mut instructions)
     }
     instructions = replace_pseudos(instructions, &mut HashMap::new());
+    instructions = fixup_instructions(instructions);
     Function::new(function.name, instructions)
 }
 
@@ -92,7 +118,32 @@ fn assemble_instruction(inst: tacky::Instruction, instructions: &mut Vec<Inst>) 
             let src = assemble_val(src);
             let dst = assemble_val(dst);
             instructions.push(Inst::Mov(src, dst.clone()));
-            instructions.push(Inst::Unary(UnaryOperator::from(op), dst));
+            instructions.push(Inst::Unary(op.into(), dst));
+        }
+        Instruction::Binary(tacky::BinaryOperator::Divide, left, right, dst) => {
+            let left = assemble_val(left);
+            let right = assemble_val(right);
+            let dst = assemble_val(dst);
+            instructions.push(Inst::Mov(left, Operand::Register(Register::AX)));
+            instructions.push(Inst::Cdq);
+            instructions.push(Inst::Idiv(right));
+            instructions.push(Inst::Mov(Operand::Register(Register::AX), dst));
+        }
+        Instruction::Binary(tacky::BinaryOperator::Remainder, left, right, dst) => {
+            let left = assemble_val(left);
+            let right = assemble_val(right);
+            let dst = assemble_val(dst);
+            instructions.push(Inst::Mov(left, Operand::Register(Register::AX)));
+            instructions.push(Inst::Cdq);
+            instructions.push(Inst::Idiv(right));
+            instructions.push(Inst::Mov(Operand::Register(Register::DX), dst));
+        }
+        Instruction::Binary(op, left, right, dst) => {
+            let left = assemble_val(left);
+            let right = assemble_val(right);
+            let dst = assemble_val(dst);
+            instructions.push(Inst::Mov(left, dst.clone()));
+            instructions.push(Inst::Binary(op.into(), right, dst));
         }
     }
 }
@@ -121,13 +172,7 @@ fn replace_pseudos(instructions: Vec<Inst>, allocation: &mut HashMap<String, i32
                     dst
                 };
 
-                if matches!(src, Operand::Stack(_)) && matches!(dst, Operand::Stack(_)) {
-                    let tmp = Operand::Register(Register::R10);
-                    ret.push(Inst::Mov(src, tmp.clone()));
-                    ret.push(Inst::Mov(tmp, dst));
-                } else {
-                    ret.push(Inst::Mov(src, dst));
-                }
+                ret.push(Inst::Mov(src, dst));
             }
             Inst::Unary(op, dst) => {
                 let dst = if let Operand::Pseudo(pseudo) = dst {
@@ -135,7 +180,32 @@ fn replace_pseudos(instructions: Vec<Inst>, allocation: &mut HashMap<String, i32
                 } else {
                     dst
                 };
+
                 ret.push(Inst::Unary(op, dst));
+            }
+            Inst::Binary(op, right, dst) => {
+                let right = if let Operand::Pseudo(pseudo) = right {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    right
+                };
+
+                let dst = if let Operand::Pseudo(pseudo) = dst {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    dst
+                };
+
+                ret.push(Inst::Binary(op, right, dst));
+            }
+            Inst::Idiv(dst) => {
+                let dst = if let Operand::Pseudo(pseudo) = dst {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    dst
+                };
+
+                ret.push(Inst::Idiv(dst));
             }
             _ => ret.push(inst),
         }
@@ -148,4 +218,39 @@ fn allocate_stack(identifier: Identifier, allocation: &mut HashMap<String, i32>)
     let offset = -4 * (allocation.len() + 1) as i32;
     let p = allocation.entry(identifier).or_insert(offset);
     *p
+}
+
+fn fixup_instructions(instructions: Vec<Inst>) -> Vec<Inst> {
+    let mut ret = Vec::with_capacity(instructions.len());
+    for inst in instructions {
+        match inst {
+            Inst::Mov(src, dst)
+                if matches!(src, Operand::Stack(_)) && matches!(dst, Operand::Stack(_)) =>
+            {
+                let tmp = Operand::Register(Register::R10);
+                ret.push(Inst::Mov(src, tmp.clone()));
+                ret.push(Inst::Mov(tmp, dst));
+            }
+            Inst::Binary(BinaryOperator::Mul, right, dst) if matches!(dst, Operand::Stack(_)) => {
+                let tmp = Operand::Register(Register::R11);
+                ret.push(Inst::Mov(dst.clone(), tmp.clone()));
+                ret.push(Inst::Binary(BinaryOperator::Mul, right, tmp.clone()));
+                ret.push(Inst::Mov(tmp, dst));
+            }
+            Inst::Binary(op, right, dst)
+                if matches!(right, Operand::Stack(_)) && matches!(dst, Operand::Stack(_)) =>
+            {
+                let tmp = Operand::Register(Register::R10);
+                ret.push(Inst::Mov(right, tmp.clone()));
+                ret.push(Inst::Binary(op, tmp, dst));
+            }
+            Inst::Idiv(dst) if matches!(dst, Operand::Imm(_)) => {
+                let tmp = Operand::Register(Register::R10);
+                ret.push(Inst::Mov(dst, tmp.clone()));
+                ret.push(Inst::Idiv(tmp));
+            }
+            _ => ret.push(inst),
+        }
+    }
+    ret
 }

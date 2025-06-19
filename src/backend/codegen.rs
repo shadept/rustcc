@@ -1,4 +1,6 @@
-﻿use crate::backend::assembler::{Function, Inst, Operand, Program, Register, UnaryOperator};
+﻿use crate::backend::assembler::{
+    BinaryOperator, Function, Inst, Operand, Program, Register, UnaryOperator,
+};
 
 pub fn codegen(assembly: Program) -> String {
     let mut code = assemble_function(assembly.function_definition);
@@ -40,6 +42,13 @@ fn assemble_instruction(inst: Inst) -> String {
             UnaryOperator::Neg => format!("    negl {}", assemble_operand(dst)),
             UnaryOperator::Not => format!("    notl {}", assemble_operand(dst)),
         },
+        Inst::Binary(op, right, dst) => match op {
+            BinaryOperator::Add => format!("    addl {}, {}", assemble_operand(right), assemble_operand(dst)),
+            BinaryOperator::Sub => format!("    subl {}, {}", assemble_operand(right), assemble_operand(dst)),
+            BinaryOperator::Mul => format!("    imull {}, {}", assemble_operand(right), assemble_operand(dst)),
+        },
+        Inst::Idiv(o) => format!("    idivl {}", assemble_operand(o)),
+        Inst::Cdq => "    cdq".to_string(),
         Inst::AllocateStack(s) => format!("    subq ${s}, %rsp"),
     }
 }
@@ -49,7 +58,9 @@ fn assemble_operand(op: Operand) -> String {
         Operand::Imm(i) => format!("${i}"),
         Operand::Pseudo(_) => panic!("Cannot generate code for pseudo-registers"),
         Operand::Register(Register::AX) => "%eax".to_string(),
+        Operand::Register(Register::DX) => "%edx".to_string(),
         Operand::Register(Register::R10) => "%r10d".to_string(),
+        Operand::Register(Register::R11) => "%r10d".to_string(),
         Operand::Stack(offset) => format!("{offset}(%rbp)"),
     }
 }
