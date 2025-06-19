@@ -79,6 +79,9 @@ pub enum Bits {
 
 impl From<i64> for Bits {
     fn from(value: i64) -> Self {
+        if value == 0 {
+            return Bits::B8;
+        }
         match value.abs().ilog2() {
             0..=7 => Bits::B8,
             8..=15 => Bits::B16,

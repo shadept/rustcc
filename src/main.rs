@@ -20,7 +20,7 @@ enum CommandArg {
     Lex,
     Parse,
     Codegen,
-    Codeemit,
+    CodeEmit,
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     match args.len() {
         2 => {
-            command = CommandArg::Codeemit;
+            command = CommandArg::CodeEmit;
             input_file = &args[1];
         }
         3 => {
@@ -74,15 +74,15 @@ fn main() -> Result<(), anyhow::Error> {
     if command >= CommandArg::Lex {
         let preprocessed_file = input_file.replace(".c", ".i");
         let tokens = run_lexer(input_file, &preprocessed_file)?;
-        dbg!(&tokens);
+        // dbg!(&tokens);
         if command >= CommandArg::Parse {
             let program = run_parser(tokens)?;
-            dbg!(&program);
+            // dbg!(&program);
             // misnomer
             if command >= CommandArg::Codegen {
                 let assembly = assemble(program);
-                dbg!(&assembly);
-                if command >= CommandArg::Codeemit {
+                // dbg!(&assembly);
+                if command >= CommandArg::CodeEmit {
                     let assembly_file = input_file.replace(".c", ".s");
                     run_codegen(assembly, &assembly_file)?;
                 }
@@ -137,16 +137,16 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, ParserError> {
 
 fn run_codegen(assembly: Assembly, assembly_file: &str) -> io::Result<()> {
     let code = codegen(assembly);
-    print!("Assembly:\n{}", &code);
+    File::create(assembly_file)?.write_all(code.as_bytes())?;
 
-    // Command::new("clang")
-    //     .args(["-S", assembly_file, "-o", assembly_file])
-    //     .spawn()?
-    //     .wait()?;
-    //
-    // if false {
-    //     std::fs::remove_file(assembly_file)?;
-    // }
+    Command::new("clang")
+        .args(["-S", assembly_file, "-o", assembly_file])
+        .spawn()?
+        .wait()?;
+
+    if false {
+        std::fs::remove_file(assembly_file)?;
+    }
 
     Ok(())
 }
