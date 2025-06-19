@@ -1,8 +1,6 @@
 mod backend;
 mod frontend;
 
-use crate::backend::assembler::assemble;
-use crate::backend::ast::Assembly;
 use crate::backend::codegen::codegen;
 use crate::frontend::ast::Program;
 use crate::frontend::lexer::Lexer;
@@ -14,11 +12,15 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Write, stdout};
 use std::process::Command;
+use crate::backend::assembler;
+use crate::backend::assembler::assemble;
+use crate::backend::tacky::emit_tacky;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 enum CommandArg {
     Lex,
     Parse,
+    Tacky,
     Codegen,
     CodeEmit,
 }
@@ -51,6 +53,7 @@ fn main() -> Result<(), anyhow::Error> {
             match args[1].as_str() {
                 "--lex" => command = CommandArg::Lex,
                 "--parse" => command = CommandArg::Parse,
+                "--tacky" => command = CommandArg::Tacky,
                 "--codegen" => command = CommandArg::Codegen,
                 _ => {
                     print_usage(&args[1])?;
@@ -78,13 +81,17 @@ fn main() -> Result<(), anyhow::Error> {
         if command >= CommandArg::Parse {
             let program = run_parser(tokens)?;
             // dbg!(&program);
-            // misnomer
-            if command >= CommandArg::Codegen {
-                let assembly = assemble(program);
-                // dbg!(&assembly);
-                if command >= CommandArg::CodeEmit {
-                    let assembly_file = input_file.replace(".c", ".s");
-                    run_codegen(assembly, &assembly_file)?;
+            if command >= CommandArg::Tacky {
+                let tacky = emit_tacky(program);
+                dbg!(&tacky);
+                // misnomer
+                if command >= CommandArg::Codegen {
+                    let assembly = assemble(tacky);
+                    dbg!(&assembly);
+                    if command >= CommandArg::CodeEmit {
+                        let assembly_file = input_file.replace(".c", ".s");
+                        run_codegen(assembly, &assembly_file)?;
+                    }
                 }
             }
         }
@@ -135,18 +142,18 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, ParserError> {
     Ok(program)
 }
 
-fn run_codegen(assembly: Assembly, assembly_file: &str) -> io::Result<()> {
+fn run_codegen(assembly: assembler::Program, assembly_file: &str) -> io::Result<()> {
     let code = codegen(assembly);
     File::create(assembly_file)?.write_all(code.as_bytes())?;
 
-    Command::new("clang")
-        .args(["-S", assembly_file, "-o", assembly_file])
-        .spawn()?
-        .wait()?;
-
-    if false {
-        std::fs::remove_file(assembly_file)?;
-    }
+    // Command::new("clang")
+    //     .args(["-S", assembly_file, "-o", assembly_file])
+    //     .spawn()?
+    //     .wait()?;
+    // 
+    // if false {
+    //     std::fs::remove_file(assembly_file)?;
+    // }
 
     Ok(())
 }

@@ -124,7 +124,7 @@ impl Parser {
             }
             TokenKind::IntNumber(n, _) => {
                 self.advance().unwrap();
-                Ok(Expr::new(ExprKind::Constant(n), token.span))
+                Ok(Expr::new(ExprKind::Constant(n as i32), token.span))
             }
             _ => Err(UnexpectedToken(token)),
         }

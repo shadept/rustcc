@@ -46,7 +46,7 @@ impl Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
-    Constant(i64),
+    Constant(i32),
     Unary(UnaryOp, Box<Expr>),
     Return(Option<Box<Expr>>),
 }
