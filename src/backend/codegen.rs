@@ -46,6 +46,9 @@ fn assemble_instruction(inst: Inst) -> String {
             BinaryOperator::Add => format!("    addl {}, {}", assemble_operand(right), assemble_operand(dst)),
             BinaryOperator::Sub => format!("    subl {}, {}", assemble_operand(right), assemble_operand(dst)),
             BinaryOperator::Mul => format!("    imull {}, {}", assemble_operand(right), assemble_operand(dst)),
+            BinaryOperator::Or => format!("    orl {}, {}", assemble_operand(right), assemble_operand(dst)),
+            BinaryOperator::And => format!("    andl {}, {}", assemble_operand(right), assemble_operand(dst)),
+            BinaryOperator::Xor => format!("    xorl {}, {}", assemble_operand(right), assemble_operand(dst)),
         },
         Inst::Idiv(o) => format!("    idivl {}", assemble_operand(o)),
         Inst::Cdq => "    cdq".to_string(),
@@ -60,7 +63,7 @@ fn assemble_operand(op: Operand) -> String {
         Operand::Register(Register::AX) => "%eax".to_string(),
         Operand::Register(Register::DX) => "%edx".to_string(),
         Operand::Register(Register::R10) => "%r10d".to_string(),
-        Operand::Register(Register::R11) => "%r10d".to_string(),
+        Operand::Register(Register::R11) => "%r11d".to_string(),
         Operand::Stack(offset) => format!("{offset}(%rbp)"),
     }
 }

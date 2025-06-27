@@ -153,6 +153,9 @@ impl Parser {
                 Symbol::Star => Some(BinaryOp::Multiply),
                 Symbol::Slash => Some(BinaryOp::Divide),
                 Symbol::Percent => Some(BinaryOp::Remainder),
+                Symbol::Pipe => Some(BinaryOp::BitwiseOr),
+                Symbol::Ampersand => Some(BinaryOp::BitwiseAnd),
+                Symbol::Caret => Some(BinaryOp::BitwiseXor),
                 _ => None,
             }
         } else {
@@ -167,6 +170,9 @@ impl Parser {
             BinaryOp::Multiply => 50,
             BinaryOp::Divide => 50,
             BinaryOp::Remainder => 50,
+            BinaryOp::BitwiseOr => 30,
+            BinaryOp::BitwiseAnd => 35,
+            BinaryOp::BitwiseXor => 40,
         }
     }
 

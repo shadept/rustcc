@@ -68,6 +68,9 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    BitwiseOr,
+    BitwiseAnd,
+    BitwiseXor,
 }
 
 #[derive(Debug, Clone, PartialEq)]

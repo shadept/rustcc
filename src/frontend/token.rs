@@ -50,6 +50,9 @@ pub enum Symbol {
     Slash,
     Percent,
     MinusMinus,
+    Pipe,    // Bitwise OR (|)
+    Ampersand, // Bitwise AND (&)
+    Caret,   // Bitwise XOR (^)
 }
 
 impl Display for Symbol {
@@ -72,6 +75,9 @@ impl Display for Symbol {
             Symbol::Slash => "/",
             Symbol::Percent => "%",
             Symbol::MinusMinus => "--",
+            Symbol::Pipe => "|",
+            Symbol::Ampersand => "&",
+            Symbol::Caret => "^",
         };
         write!(f, "{}", glyph)
     }

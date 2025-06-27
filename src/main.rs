@@ -119,11 +119,11 @@ fn run_lexer(input_file: &str, preprocessed_file: &str) -> anyhow::Result<Vec<To
     file.read_to_string(&mut buffer)?;
     if buffer.starts_with("\u{FEFF}") {
         // Skip BOM
-        buffer.remove(0);
+        buffer.drain(.."\u{FEFF}".len());
     }
     if buffer.starts_with("#!") {
         // Skip shebang
-        buffer.drain(..buffer.find('\n').unwrap_or(buffer.len()));
+        buffer.drain(..=buffer.find('\n').unwrap_or(buffer.len()));
     }
     drop(file); // force closes the file
 
@@ -151,13 +151,15 @@ fn run_codegen(
     let code = codegen(assembly);
     File::create(assembly_file)?.write_all(code.as_bytes())?;
 
-    Command::new("clang")
-        .args([assembly_file, "-o", executable_file, "-arch", "x86_64"])
-        .spawn()?
-        .wait()?;
+    if !cfg!(windows) {
+        Command::new("clang")
+            .args([assembly_file, "-o", executable_file, "-arch", "x86_64"])
+            .spawn()?
+            .wait()?;
 
-    if false {
-        std::fs::remove_file(assembly_file)?;
+        if false {
+            std::fs::remove_file(assembly_file)?;
+        }
     }
 
     Ok(())

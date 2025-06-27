@@ -61,6 +61,9 @@ pub enum BinaryOperator {
     Add,
     Sub,
     Mul,
+    Or,
+    And,
+    Xor,
 }
 
 impl From<tacky::BinaryOperator> for BinaryOperator {
@@ -69,6 +72,9 @@ impl From<tacky::BinaryOperator> for BinaryOperator {
             tacky::BinaryOperator::Add => BinaryOperator::Add,
             tacky::BinaryOperator::Subtract => BinaryOperator::Sub,
             tacky::BinaryOperator::Multiply => BinaryOperator::Mul,
+            tacky::BinaryOperator::BitwiseOr => BinaryOperator::Or,
+            tacky::BinaryOperator::BitwiseAnd => BinaryOperator::And,
+            tacky::BinaryOperator::BitwiseXor => BinaryOperator::Xor,
             tacky::BinaryOperator::Divide | tacky::BinaryOperator::Remainder => {
                 unreachable!("Divide and Remainder must be handled separately")
             }

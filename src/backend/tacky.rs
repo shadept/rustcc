@@ -66,6 +66,9 @@ pub enum BinaryOperator {
     Multiply,
     Divide,
     Remainder,
+    BitwiseOr,
+    BitwiseAnd,
+    BitwiseXor,
 }
 
 impl From<BinaryOp> for BinaryOperator {
@@ -76,6 +79,9 @@ impl From<BinaryOp> for BinaryOperator {
             BinaryOp::Multiply => BinaryOperator::Multiply,
             BinaryOp::Divide => BinaryOperator::Divide,
             BinaryOp::Remainder => BinaryOperator::Remainder,
+            BinaryOp::BitwiseOr => BinaryOperator::BitwiseOr,
+            BinaryOp::BitwiseAnd => BinaryOperator::BitwiseAnd,
+            BinaryOp::BitwiseXor => BinaryOperator::BitwiseXor,
         }
     }
 }
