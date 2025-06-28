@@ -111,17 +111,16 @@ impl Parser {
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
         let token = self.peek().ok_or(ParserError::EOT)?;
+        if let Some(op) = self.parse_unary_op(&token) {
+            let token = self.advance().unwrap();
+            let expr = self.parse_factor()?;
+            let span = expr.span + token.span;
+            return Ok(Expr::new(ExprKind::Unary(op, expr.into()), span));
+        }
         match token.kind {
             TokenKind::IntNumber(n, _) => {
                 self.advance().unwrap();
                 Ok(Expr::new(ExprKind::Constant(n as i32), token.span))
-            }
-            TokenKind::Symbol(Symbol::Tilde) | TokenKind::Symbol(Symbol::Minus) => {
-                let token = self.advance().unwrap();
-                let op = self.parse_unary_op(&token).unwrap();
-                let expr = self.parse_factor()?;
-                let span = expr.span + token.span;
-                Ok(Expr::new(ExprKind::Unary(op, expr.into()), span))
             }
             TokenKind::Symbol(Symbol::OpenParen) => {
                 self.advance().unwrap();
@@ -136,8 +135,9 @@ impl Parser {
     fn parse_unary_op(&self, token: &Token) -> Option<UnaryOp> {
         if let TokenKind::Symbol(sym) = &token.kind {
             match sym {
-                Symbol::Minus => Some(UnaryOp::Negate),
                 Symbol::Tilde => Some(UnaryOp::Complement),
+                Symbol::Minus => Some(UnaryOp::Negate),
+                Symbol::Bang => Some(UnaryOp::Not),
                 _ => None,
             }
         } else {
@@ -156,6 +156,14 @@ impl Parser {
                 Symbol::Pipe => Some(BinaryOp::BitwiseOr),
                 Symbol::Ampersand => Some(BinaryOp::BitwiseAnd),
                 Symbol::Caret => Some(BinaryOp::BitwiseXor),
+                Symbol::AmpersandAmpersand => Some(BinaryOp::And),
+                Symbol::PipePipe => Some(BinaryOp::Or),
+                Symbol::EqualEqual => Some(BinaryOp::Equal),
+                Symbol::BangEqual => Some(BinaryOp::NotEqual),
+                Symbol::LessThan => Some(BinaryOp::LessThan),
+                Symbol::GreaterThan => Some(BinaryOp::GreaterThan),
+                Symbol::LessThanOrEqual => Some(BinaryOp::LessThanOrEqual),
+                Symbol::GreaterThanOrEqual => Some(BinaryOp::GreaterThanOrEqual),
                 _ => None,
             }
         } else {
@@ -173,6 +181,14 @@ impl Parser {
             BinaryOp::BitwiseOr => 30,
             BinaryOp::BitwiseAnd => 35,
             BinaryOp::BitwiseXor => 40,
+            BinaryOp::And => 10,
+            BinaryOp::Or => 5,
+            BinaryOp::Equal => 30,
+            BinaryOp::NotEqual => 30,
+            BinaryOp::LessThan => 35,
+            BinaryOp::LessThanOrEqual => 35,
+            BinaryOp::GreaterThan => 35,
+            BinaryOp::GreaterThanOrEqual => 35,
         }
     }
 

@@ -111,7 +111,7 @@ fn run_lexer(input_file: &str, preprocessed_file: &str) -> anyhow::Result<Vec<To
             .spawn()
             .expect("Failed to execute clang")
             .wait()?;
-        file = File::open(input_file)?;
+        file = File::open(preprocessed_file)?;
     }
 
     let file_length = file.metadata()?.len() as usize;

@@ -35,8 +35,13 @@ pub enum Inst {
     Mov(Operand, Operand),
     Unary(UnaryOperator, Operand),
     Binary(BinaryOperator, Operand, Operand),
+    Cmp(Operand, Operand),
     Idiv(Operand),
     Cdq,
+    Jmp(Identifier),
+    JmpCC(CondCode, Identifier),
+    SetCC(CondCode, Operand),
+    Label(Identifier),
     AllocateStack(i32),
     Ret,
 }
@@ -50,8 +55,9 @@ pub enum UnaryOperator {
 impl From<tacky::UnaryOperator> for UnaryOperator {
     fn from(value: tacky::UnaryOperator) -> Self {
         match value {
-            tacky::UnaryOperator::Complement => UnaryOperator::Not,
             tacky::UnaryOperator::Negate => UnaryOperator::Neg,
+            tacky::UnaryOperator::Complement => UnaryOperator::Not,
+            tacky::UnaryOperator::Not => UnaryOperator::Not,
         }
     }
 }
@@ -78,6 +84,7 @@ impl From<tacky::BinaryOperator> for BinaryOperator {
             tacky::BinaryOperator::Divide | tacky::BinaryOperator::Remainder => {
                 unreachable!("Divide and Remainder must be handled separately")
             }
+            _ => panic!("Unknown binary operator"),
         }
     }
 }
@@ -88,6 +95,16 @@ pub enum Operand {
     Pseudo(String),
     Register(Register),
     Stack(i32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CondCode {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -120,6 +137,12 @@ fn assemble_instruction(inst: tacky::Instruction, instructions: &mut Vec<Inst>) 
             instructions.push(Inst::Mov(src, dst));
             instructions.push(Inst::Ret);
         }
+        Instruction::Unary(tacky::UnaryOperator::Not, src, dst) => {
+            let dst = assemble_val(dst);
+            instructions.push(Inst::Cmp(Operand::Imm(0), assemble_val(src)));
+            instructions.push(Inst::Mov(Operand::Imm(0), dst.clone()));
+            instructions.push(Inst::SetCC(CondCode::E, dst));
+        }
         Instruction::Unary(op, src, dst) => {
             let src = assemble_val(src);
             let dst = assemble_val(dst);
@@ -144,12 +167,53 @@ fn assemble_instruction(inst: tacky::Instruction, instructions: &mut Vec<Inst>) 
             instructions.push(Inst::Idiv(right));
             instructions.push(Inst::Mov(Operand::Register(Register::DX), dst));
         }
+        Instruction::Binary(op, left, right, dst)
+            if op == tacky::BinaryOperator::Equal
+                || op == tacky::BinaryOperator::NotEqual
+                || op == tacky::BinaryOperator::LessThan
+                || op == tacky::BinaryOperator::LessThanOrEqual
+                || op == tacky::BinaryOperator::GreaterThan
+                || op == tacky::BinaryOperator::GreaterThanOrEqual =>
+        {
+            instructions.push(Inst::Cmp(assemble_val(right), assemble_val(left)));
+            let dst = assemble_val(dst);
+            instructions.push(Inst::Mov(Operand::Imm(0), dst.clone()));
+            instructions.push(Inst::SetCC(
+                match op {
+                    tacky::BinaryOperator::Equal => CondCode::E,
+                    tacky::BinaryOperator::NotEqual => CondCode::NE,
+                    tacky::BinaryOperator::LessThan => CondCode::L,
+                    tacky::BinaryOperator::LessThanOrEqual => CondCode::LE,
+                    tacky::BinaryOperator::GreaterThan => CondCode::G,
+                    tacky::BinaryOperator::GreaterThanOrEqual => CondCode::GE,
+                    _ => unreachable!(),
+                },
+                dst,
+            ))
+        }
         Instruction::Binary(op, left, right, dst) => {
             let left = assemble_val(left);
             let right = assemble_val(right);
             let dst = assemble_val(dst);
             instructions.push(Inst::Mov(left, dst.clone()));
             instructions.push(Inst::Binary(op.into(), right, dst));
+        }
+        Instruction::Jump(target) => {
+            instructions.push(Inst::Jmp(target));
+        }
+        Instruction::JumpIfZero(cond, target) => {
+            instructions.push(Inst::Cmp(Operand::Imm(0), assemble_val(cond)));
+            instructions.push(Inst::JmpCC(CondCode::E, target));
+        }
+        Instruction::JumpIfNotZero(cond, target) => {
+            instructions.push(Inst::Cmp(Operand::Imm(0), assemble_val(cond)));
+            instructions.push(Inst::JmpCC(CondCode::NE, target));
+        }
+        Instruction::Copy(src, dst) => {
+            instructions.push(Inst::Mov(assemble_val(src), assemble_val(dst)));
+        }
+        Instruction::Label(name) => {
+            instructions.push(Inst::Label(name));
         }
     }
 }
@@ -204,6 +268,21 @@ fn replace_pseudos(instructions: Vec<Inst>, allocation: &mut HashMap<String, i32
 
                 ret.push(Inst::Binary(op, right, dst));
             }
+            Inst::Cmp(left, right) => {
+                let left = if let Operand::Pseudo(pseudo) = left {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    left
+                };
+
+                let right = if let Operand::Pseudo(pseudo) = right {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    right
+                };
+
+                ret.push(Inst::Cmp(left, right));
+            }
             Inst::Idiv(dst) => {
                 let dst = if let Operand::Pseudo(pseudo) = dst {
                     Operand::Stack(allocate_stack(pseudo, allocation))
@@ -212,6 +291,15 @@ fn replace_pseudos(instructions: Vec<Inst>, allocation: &mut HashMap<String, i32
                 };
 
                 ret.push(Inst::Idiv(dst));
+            }
+            Inst::SetCC(cc, dst) => {
+                let dst = if let Operand::Pseudo(pseudo) = dst {
+                    Operand::Stack(allocate_stack(pseudo, allocation))
+                } else {
+                    dst
+                };
+
+                ret.push(Inst::SetCC(cc, dst));
             }
             _ => ret.push(inst),
         }
@@ -249,6 +337,18 @@ fn fixup_instructions(instructions: Vec<Inst>) -> Vec<Inst> {
                 let tmp = Operand::Register(Register::R10);
                 ret.push(Inst::Mov(right, tmp.clone()));
                 ret.push(Inst::Binary(op, tmp, dst));
+            }
+            Inst::Cmp(left, right)
+                if matches!(left, Operand::Stack(_)) && matches!(right, Operand::Stack(_)) =>
+            {
+                let tmp = Operand::Register(Register::R10);
+                ret.push(Inst::Mov(left, tmp.clone()));
+                ret.push(Inst::Cmp(tmp, right));
+            }
+            Inst::Cmp(left, right) if matches!(right, Operand::Imm(_)) => {
+                let tmp = Operand::Register(Register::R11);
+                ret.push(Inst::Mov(right, tmp.clone()));
+                ret.push(Inst::Cmp(left, tmp));
             }
             Inst::Idiv(dst) if matches!(dst, Operand::Imm(_)) => {
                 let tmp = Operand::Register(Register::R10);

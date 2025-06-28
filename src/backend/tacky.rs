@@ -1,6 +1,7 @@
 ﻿use crate::frontend::ast;
 use crate::frontend::ast::{BinaryOp, ExprKind, StmtKind, UnaryOp};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::backend::tacky::Instruction::Jump;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -36,6 +37,11 @@ pub enum Instruction {
     Binary(BinaryOperator, Val, Val, Val),
     Return(Val),
     Unary(UnaryOperator, Val, Val), // cannot assign to Constant
+    Copy(Val, Val),
+    Jump(Identifier),
+    JumpIfZero(Val, Identifier),
+    JumpIfNotZero(Val, Identifier),
+    Label(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +54,7 @@ pub enum Val {
 pub enum UnaryOperator {
     Complement,
     Negate,
+    Not,
 }
 
 impl From<UnaryOp> for UnaryOperator {
@@ -55,6 +62,7 @@ impl From<UnaryOp> for UnaryOperator {
         match value {
             UnaryOp::Complement => UnaryOperator::Complement,
             UnaryOp::Negate => UnaryOperator::Negate,
+            UnaryOp::Not => UnaryOperator::Not,
         }
     }
 }
@@ -69,6 +77,12 @@ pub enum BinaryOperator {
     BitwiseOr,
     BitwiseAnd,
     BitwiseXor,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
 }
 
 impl From<BinaryOp> for BinaryOperator {
@@ -82,6 +96,13 @@ impl From<BinaryOp> for BinaryOperator {
             BinaryOp::BitwiseOr => BinaryOperator::BitwiseOr,
             BinaryOp::BitwiseAnd => BinaryOperator::BitwiseAnd,
             BinaryOp::BitwiseXor => BinaryOperator::BitwiseXor,
+            BinaryOp::Equal => BinaryOperator::Equal,
+            BinaryOp::NotEqual => BinaryOperator::NotEqual,
+            BinaryOp::LessThan => BinaryOperator::LessThan,
+            BinaryOp::LessThanOrEqual => BinaryOperator::LessThanOrEqual,
+            BinaryOp::GreaterThan => BinaryOperator::GreaterThan,
+            BinaryOp::GreaterThanOrEqual => BinaryOperator::GreaterThanOrEqual,
+            _ => panic!("invalid binary operator"),
         }
     }
 }
@@ -108,6 +129,36 @@ fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
 fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val {
     use crate::backend::tacky::Val::{Constant, Var};
     match expr.kind {
+        ExprKind::Binary(BinaryOp::And, left, right) => {
+            let left = emit_tacky_expr(*left, instructions);
+            let false_label = make_label("false");
+            instructions.push(Instruction::JumpIfZero(left, false_label.clone()));
+            let right = emit_tacky_expr(*right, instructions);
+            instructions.push(Instruction::JumpIfZero(right, false_label.clone()));
+            let dst = Var(make_temporary());
+            instructions.push(Instruction::Copy(Constant(1), dst.clone()));
+            let end_label = make_label("end");
+            instructions.push(Jump(end_label.clone()));
+            instructions.push(Instruction::Label(false_label));
+            instructions.push(Instruction::Copy(Constant(0), dst.clone()));
+            instructions.push(Instruction::Label(end_label));
+            dst
+        }
+        ExprKind::Binary(BinaryOp::Or, left, right) => {
+            let left = emit_tacky_expr(*left, instructions);
+            let true_label = make_label("true");
+            instructions.push(Instruction::JumpIfNotZero(left, true_label.clone()));
+            let right = emit_tacky_expr(*right, instructions);
+            instructions.push(Instruction::JumpIfNotZero(right, true_label.clone()));
+            let dst = Var(make_temporary());
+            instructions.push(Instruction::Copy(Constant(0), dst.clone()));
+            let end_label = make_label("end");
+            instructions.push(Jump(end_label.clone()));
+            instructions.push(Instruction::Label(true_label));
+            instructions.push(Instruction::Copy(Constant(1), dst.clone()));
+            instructions.push(Instruction::Label(end_label));
+            dst
+        }
         ExprKind::Binary(op, left, right) => {
             let left = emit_tacky_expr(*left, instructions);
             let right = emit_tacky_expr(*right, instructions);
@@ -138,4 +189,9 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
 fn make_temporary() -> Identifier {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     format!("tmp.{}", COUNTER.fetch_add(1, Ordering::SeqCst))
+}
+
+fn make_label(prefix: &str) -> Identifier {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    format!("{}", COUNTER.fetch_add(1, Ordering::SeqCst))
 }

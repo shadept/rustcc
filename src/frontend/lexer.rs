@@ -55,20 +55,38 @@ impl<'src> Lexer<'src> {
             '~' => self.create_token_from_symbol(Symbol::Tilde),
             '+' => self.create_token_from_symbol(Symbol::Plus),
             '-' => {
-                let sym = if self.match_char('-') {
-                    Symbol::MinusMinus
-                } else {
-                    Symbol::Minus
-                };
+                let sym = self.if_match_char('-', Symbol::MinusMinus, Symbol::Minus);
                 self.create_token_from_symbol(sym)
             }
             '*' => self.create_token_from_symbol(Symbol::Star),
             '/' => self.create_token_from_symbol(Symbol::Slash),
             '%' => self.create_token_from_symbol(Symbol::Percent),
-            '|' => self.create_token_from_symbol(Symbol::Pipe),
-            '&' => self.create_token_from_symbol(Symbol::Ampersand),
+            '=' => {
+                let sym = self.if_match_char('=', Symbol::EqualEqual, Symbol::Equal);
+                self.create_token_from_symbol(sym)
+            }
+            '!' => {
+                let sym = self.if_match_char('=', Symbol::BangEqual, Symbol::Bang);
+                self.create_token_from_symbol(sym)
+            }
+            '|' => {
+                let sym = self.if_match_char('|', Symbol::PipePipe, Symbol::Pipe);
+                self.create_token_from_symbol(sym)
+            }
+            '&' => {
+                let sym = self.if_match_char('&', Symbol::AmpersandAmpersand, Symbol::Ampersand);
+                self.create_token_from_symbol(sym)
+            }
+            '<' => {
+                let sym = self.if_match_char('=', Symbol::LessThanOrEqual, Symbol::LessThan);
+                self.create_token_from_symbol(sym)
+            }
+            '>' => {
+                let sym = self.if_match_char('=', Symbol::GreaterThanOrEqual, Symbol::GreaterThan);
+                self.create_token_from_symbol(sym)
+            }
             '^' => self.create_token_from_symbol(Symbol::Caret),
-            ch if ch.is_digit(10) => self.parse_number(),
+            ch if ch.is_digit(10) => self.parse_number()?,
             ch if ch.is_alphabetic() || ch == '_' => self.parse_identifier_or_keyword(),
             _ => return Err(LexerError::UnexpectedToken(self.create_span())),
         };
@@ -127,6 +145,14 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    fn if_match_char(&mut self, ch: char, if_match: Symbol, otherwise: Symbol) -> Symbol {
+        if self.match_char(ch) {
+            if_match
+        } else {
+            otherwise
+        }
+    }
+
     fn is_eof(&self) -> bool {
         self.peek().is_none()
     }
@@ -149,7 +175,7 @@ impl<'src> Lexer<'src> {
         self.create_token(TokenKind::Symbol(symbol))
     }
 
-    fn parse_number(&mut self) -> Token {
+    fn parse_number(&mut self) -> Result<Token, LexerError> {
         // We already know the first character is a digit
         while let Some(c) = self.peek() {
             if c.is_digit(10) {
@@ -159,11 +185,26 @@ impl<'src> Lexer<'src> {
             }
         }
 
+        if let Some(c) = self.peek() {
+            if c.is_alphabetic() {
+                // consume the rest of identifier
+                while let Some(c) = self.peek() {
+                    if !c.is_alphanumeric() && c != '_' {
+                        break;
+                    }
+                    self.advance();
+                }
+                let span = self.create_span();
+                return Err(LexerError::InvalidIdentifier(span));
+            }
+        }
+
         let number = self
             .current_lexeme()
             .parse::<i64>()
             .expect("Failed to parse number");
-        self.create_token(TokenKind::IntNumber(number, Bits::from(number)))
+        let token = self.create_token(TokenKind::IntNumber(number, Bits::from(number)));
+        Ok(token)
     }
 
     fn parse_identifier_or_keyword(&mut self) -> Token {
@@ -187,6 +228,7 @@ impl<'src> Lexer<'src> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexerError {
     UnexpectedToken(Span),
+    InvalidIdentifier(Span),
     EOF(Span),
 }
 
@@ -194,6 +236,7 @@ impl Display for LexerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             LexerError::UnexpectedToken(span) => write!(f, "Unexpected token @ {span:?}"),
+            LexerError::InvalidIdentifier(_) => write!(f, "Invalid identifier"),
             LexerError::EOF(span) => write!(f, "End of file @ {span:?}"),
         }
     }
@@ -272,8 +315,14 @@ mod tests {
 
         assert_eq!(tokens.len(), 3);
         assert!(matches!(tokens[0].kind, TokenKind::IntNumber(0, Bits::B8)));
-        assert!(matches!(tokens[1].kind, TokenKind::IntNumber(123, Bits::B8)));
-        assert!(matches!(tokens[2].kind, TokenKind::IntNumber(456789, Bits::B32)));
+        assert!(matches!(
+            tokens[1].kind,
+            TokenKind::IntNumber(123, Bits::B8)
+        ));
+        assert!(matches!(
+            tokens[2].kind,
+            TokenKind::IntNumber(456789, Bits::B32)
+        ));
     }
 
     #[test]

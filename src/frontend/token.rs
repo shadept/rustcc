@@ -50,9 +50,19 @@ pub enum Symbol {
     Slash,
     Percent,
     MinusMinus,
-    Pipe,    // Bitwise OR (|)
+    Pipe,      // Bitwise OR (|)
     Ampersand, // Bitwise AND (&)
-    Caret,   // Bitwise XOR (^)
+    Caret,     // Bitwise XOR (^)
+    Bang,
+    Equal,
+    AmpersandAmpersand,
+    PipePipe,
+    EqualEqual,
+    BangEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 impl Display for Symbol {
@@ -78,6 +88,16 @@ impl Display for Symbol {
             Symbol::Pipe => "|",
             Symbol::Ampersand => "&",
             Symbol::Caret => "^",
+            Symbol::Bang => "!",
+            Symbol::Equal => "=",
+            Symbol::AmpersandAmpersand => "&&",
+            Symbol::PipePipe => "||",
+            Symbol::EqualEqual => "==",
+            Symbol::BangEqual => "!=",
+            Symbol::LessThan => "<",
+            Symbol::GreaterThan => ">",
+            Symbol::LessThanOrEqual => "<=",
+            Symbol::GreaterThanOrEqual => ">=",
         };
         write!(f, "{}", glyph)
     }

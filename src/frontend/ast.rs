@@ -59,6 +59,7 @@ pub enum ExprKind {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +72,14 @@ pub enum BinaryOp {
     BitwiseOr,
     BitwiseAnd,
     BitwiseXor,
+    And,
+    Or,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
 }
 
 #[derive(Debug, Clone, PartialEq)]
