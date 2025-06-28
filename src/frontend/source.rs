@@ -1,6 +1,7 @@
 ﻿use std::path::PathBuf;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum FileName {
     Real(PathBuf),
     Anon(usize),
@@ -12,6 +13,7 @@ impl From<PathBuf> for FileName {
     }
 }
 
+#[derive(Debug)]
 pub struct SourceFile {
     pub name: FileName,
     pub src: Option<Arc<String>>,

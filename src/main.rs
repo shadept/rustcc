@@ -6,23 +6,39 @@ use crate::backend::assembler::assemble;
 use crate::backend::codegen::codegen;
 use crate::backend::tacky::emit_tacky;
 use crate::frontend::ast::Program;
-use crate::frontend::lexer::Lexer;
+use crate::frontend::lexer::{Lexer, LexerError};
 use crate::frontend::parser::{Parser, ParserError};
+use crate::frontend::source::{FileName, SourceFile};
 use crate::frontend::token::Token;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write, stdout};
+use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
-enum CommandArg {
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Copy)]
+enum CompilationStage {
     Lex,
     Parse,
     Tacky,
     Codegen,
     CodeEmit,
+}
+
+impl CompilationStage {
+    // Parse from command line argument
+    fn from_arg(arg: &str) -> Option<Self> {
+        match arg {
+            "--lex" => Some(Self::Lex),
+            "--parse" => Some(Self::Parse),
+            "--tacky" => Some(Self::Tacky),
+            "--codegen" => Some(Self::Codegen),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -39,84 +55,99 @@ impl Display for MainError {
 impl Error for MainError {}
 
 fn main() -> Result<(), anyhow::Error> {
+    // Enable ANSI colors on Windows
+    #[cfg(windows)]
+    colored::control::set_virtual_terminal(true).unwrap_or(());
+
+    // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
     let executable_name = &args[0];
-    let command: CommandArg;
-    let input_file: &str;
 
-    match args.len() {
-        2 => {
-            command = CommandArg::CodeEmit;
-            input_file = &args[1];
-        }
+    // Determine compilation stage and input file
+    let (target_stage, input_file) = match args.len() {
+        2 => (CompilationStage::CodeEmit, &args[1]),
         3 => {
-            match args[1].as_str() {
-                "--lex" => command = CommandArg::Lex,
-                "--parse" => command = CommandArg::Parse,
-                "--tacky" => command = CommandArg::Tacky,
-                "--codegen" => command = CommandArg::Codegen,
-                _ => {
-                    print_usage(&args[1])?;
-                    return Err(MainError {
-                        message: "Unknown command.",
-                    }
-                    .into());
+            let stage = CompilationStage::from_arg(&args[1]).ok_or_else(|| {
+                // Print usage and return error for unknown command
+                let _ = print_usage(&args[1]);
+                MainError {
+                    message: "Unknown command.",
                 }
-            }
-            input_file = &args[2];
+            })?;
+            (stage, &args[2])
         }
         _ => {
-            print_usage(executable_name)?;
+            // Print usage and return error for invalid number of arguments
+            let _ = print_usage(executable_name);
             return Err(MainError {
                 message: "Invalid number of arguments.",
             }
             .into());
         }
+    };
+
+    // Process the input file through the compilation pipeline
+
+    // Stage 1: Lexing
+    let preprocessed_file = input_file.replace(".c", ".i");
+    let (tokens, source_file) = run_lexer(input_file, &preprocessed_file)?;
+    if target_stage == CompilationStage::Lex {
+        return Ok(());
     }
 
-    if command >= CommandArg::Lex {
-        let preprocessed_file = input_file.replace(".c", ".i");
-        let tokens = run_lexer(input_file, &preprocessed_file)?;
-        // dbg!(&tokens);
-        if command >= CommandArg::Parse {
-            let program = run_parser(tokens)?;
-            // dbg!(&program);
-            if command >= CommandArg::Tacky {
-                let tacky = emit_tacky(program);
-                // dbg!(&tacky);
-                // misnomer
-                if command >= CommandArg::Codegen {
-                    let assembly = assemble(tacky);
-                    // dbg!(&assembly);
-                    if command >= CommandArg::CodeEmit {
-                        let assembly_file = input_file.replace(".c", ".s");
-                        let executable_file = input_file.replace(".c", "");
-                        run_codegen(assembly, &assembly_file, &executable_file)?;
-                    }
-                }
-            }
-        }
+    // Stage 2: Parsing
+    let program = run_parser(tokens, source_file)?;
+    if target_stage == CompilationStage::Parse {
+        return Ok(());
     }
+
+    // Stage 3: Tacky IR generation
+    let tacky = emit_tacky(program);
+    if target_stage == CompilationStage::Tacky {
+        return Ok(());
+    }
+
+    // Stage 4: Assembly generation
+    let assembly = assemble(tacky);
+    if target_stage == CompilationStage::Codegen {
+        return Ok(());
+    }
+
+    // Stage 5: Code emission
+    let assembly_file = input_file.replace(".c", ".s");
+    let executable_file = input_file.replace(".c", "");
+    run_code_emission(assembly, &assembly_file, &executable_file)?;
 
     Ok(())
 }
 
-fn run_lexer(input_file: &str, preprocessed_file: &str) -> anyhow::Result<Vec<Token>> {
-    let mut file: File;
-    if cfg!(windows) {
-        file = File::open(input_file)?;
-    } else {
+fn run_lexer(
+    input_file: &str,
+    preprocessed_file: &str,
+) -> anyhow::Result<(Vec<Token>, Arc<SourceFile>)> {
+    // Preprocess the file if not on Windows
+    if !cfg!(windows) {
         Command::new("clang")
             .args(["-E", "-P", input_file, "-o", preprocessed_file])
             .spawn()
             .expect("Failed to execute clang")
             .wait()?;
-        file = File::open(preprocessed_file)?;
     }
 
+    // Open the appropriate file
+    let file_path = if cfg!(windows) {
+        input_file
+    } else {
+        preprocessed_file
+    };
+    let mut file = File::open(file_path)?;
+
+    // Read file content
     let file_length = file.metadata()?.len() as usize;
     let mut buffer = String::with_capacity(file_length);
     file.read_to_string(&mut buffer)?;
+
+    // Clean up the buffer
     if buffer.starts_with("\u{FEFF}") {
         // Skip BOM
         buffer.drain(.."\u{FEFF}".len());
@@ -125,38 +156,64 @@ fn run_lexer(input_file: &str, preprocessed_file: &str) -> anyhow::Result<Vec<To
         // Skip shebang
         buffer.drain(..=buffer.find('\n').unwrap_or(buffer.len()));
     }
-    drop(file); // force closes the file
 
+    // Close the file
+    drop(file);
+
+    // Keep around until windows msvc is supported
     if !cfg!(windows) && false {
         std::fs::remove_file(preprocessed_file)?;
     }
 
+    // Create a SourceFile
+    let source_file = Arc::new(SourceFile {
+        name: FileName::Real(PathBuf::from(input_file)),
+        src: Some(Arc::new(buffer.clone())),
+    });
+
     let src = buffer.as_str();
     let lexer = Lexer::new(src);
-    let tokens = lexer.to_tokens()?;
-    Ok(tokens)
+    match lexer.to_tokens() {
+        Ok(tokens) => Ok((tokens, source_file)),
+        Err(err) => {
+            // Report the error with diagnostics
+            let diagnostic = err.diagnostic(source_file.clone());
+            eprintln!("{}", diagnostic);
+            Err(err.into())
+        }
+    }
 }
 
-fn run_parser(tokens: Vec<Token>) -> Result<Program, ParserError> {
-    let mut parser = Parser::new(tokens);
-    let program = parser.parse()?;
-    Ok(program)
+fn run_parser(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Result<Program, ParserError> {
+    let mut parser = Parser::new(tokens, source_file.clone());
+    match parser.parse() {
+        Ok(program) => Ok(program),
+        Err(err) => {
+            // Report the error with diagnostics
+            let diagnostic = err.diagnostic(source_file);
+            eprintln!("{}", diagnostic);
+            Err(err)
+        }
+    }
 }
 
-fn run_codegen(
+fn run_code_emission(
     assembly: assembler::Program,
     assembly_file: &str,
     executable_file: &str,
 ) -> io::Result<()> {
+    // Generate assembly code and write to file
     let code = codegen(assembly);
     File::create(assembly_file)?.write_all(code.as_bytes())?;
 
+    // On non-Windows platforms, use clang to create the executable
     if !cfg!(windows) {
         Command::new("clang")
             .args([assembly_file, "-o", executable_file, "-arch", "x86_64"])
             .spawn()?
             .wait()?;
 
+        // Keep around until windows msvc is supported
         if false {
             std::fs::remove_file(assembly_file)?;
         }

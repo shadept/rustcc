@@ -1,8 +1,11 @@
-﻿use crate::frontend::span::Span;
+use crate::frontend::diagnostic::{Diagnostic};
+use crate::frontend::source::SourceFile;
+use crate::frontend::span::Span;
 use crate::frontend::token::{Bits, Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::str::Chars;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Lexer<'src> {
@@ -232,6 +235,23 @@ pub enum LexerError {
     EOF(Span),
 }
 
+impl LexerError {
+    /// Creates a diagnostic for this error.
+    pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
+        match self {
+            LexerError::UnexpectedToken(span) => {
+                Diagnostic::error("Unexpected token".to_string(), source_file, *span)
+            }
+            LexerError::InvalidIdentifier(span) => {
+                Diagnostic::error("Invalid identifier".to_string(), source_file, *span)
+            }
+            LexerError::EOF(span) => {
+                Diagnostic::error("Unexpected end of file".to_string(), source_file, *span)
+            }
+        }
+    }
+}
+
 impl Display for LexerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -415,5 +435,95 @@ mod tests {
         assert_eq!(tokens[0].span.end, 3);
         assert_eq!(tokens[1].span.start, 4);
         assert_eq!(tokens[1].span.end, 7);
+    }
+
+    #[test]
+    fn test_comparison_operators_and_bang() {
+        let lexer = Lexer::new("== != < > <= >= !");
+        let tokens = lexer.to_tokens().unwrap();
+
+        assert_eq!(tokens.len(), 7);
+        assert_eq!(tokens[0].kind, TokenKind::Symbol(Symbol::EqualEqual));
+        assert_eq!(tokens[1].kind, TokenKind::Symbol(Symbol::BangEqual));
+        assert_eq!(tokens[2].kind, TokenKind::Symbol(Symbol::LessThan));
+        assert_eq!(tokens[3].kind, TokenKind::Symbol(Symbol::GreaterThan));
+        assert_eq!(tokens[4].kind, TokenKind::Symbol(Symbol::LessThanOrEqual));
+        assert_eq!(tokens[5].kind, TokenKind::Symbol(Symbol::GreaterThanOrEqual));
+        assert_eq!(tokens[6].kind, TokenKind::Symbol(Symbol::Bang));
+    }
+
+    #[test]
+    fn test_comparison_operators_in_expressions() {
+        let lexer = Lexer::new("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
+        let tokens = lexer.to_tokens().unwrap();
+
+        // Verify key tokens in the expression
+        assert!(tokens.len() > 20); // We have many tokens in this expression
+
+        // Find and verify comparison operators
+        let mut found_equal_equal = false;
+        let mut found_bang_equal = false;
+        let mut found_less_than = false;
+        let mut found_greater_than = false;
+        let mut found_less_than_or_equal = false;
+        let mut found_greater_than_or_equal = false;
+        let mut found_bang = false;
+        let mut found_ampersand_ampersand = false;
+        let mut found_pipe_pipe = false;
+
+        for token in tokens {
+            match token.kind {
+                TokenKind::Symbol(Symbol::EqualEqual) => found_equal_equal = true,
+                TokenKind::Symbol(Symbol::BangEqual) => found_bang_equal = true,
+                TokenKind::Symbol(Symbol::LessThan) => found_less_than = true,
+                TokenKind::Symbol(Symbol::GreaterThan) => found_greater_than = true,
+                TokenKind::Symbol(Symbol::LessThanOrEqual) => found_less_than_or_equal = true,
+                TokenKind::Symbol(Symbol::GreaterThanOrEqual) => found_greater_than_or_equal = true,
+                TokenKind::Symbol(Symbol::Bang) => found_bang = true,
+                TokenKind::Symbol(Symbol::AmpersandAmpersand) => found_ampersand_ampersand = true,
+                TokenKind::Symbol(Symbol::PipePipe) => found_pipe_pipe = true,
+                _ => {}
+            }
+        }
+
+        assert!(found_equal_equal, "== operator not found");
+        assert!(found_bang_equal, "!= operator not found");
+        assert!(found_less_than, "< operator not found");
+        assert!(found_greater_than, "> operator not found");
+        assert!(found_less_than_or_equal, "<= operator not found");
+        assert!(found_greater_than_or_equal, ">= operator not found");
+        assert!(found_bang, "! operator not found");
+        assert!(found_ampersand_ampersand, "&& operator not found");
+        assert!(found_pipe_pipe, "|| operator not found");
+    }
+
+    #[test]
+    fn test_equal_vs_equal_equal_and_bang_vs_bang_equal() {
+        let lexer = Lexer::new("a = b == c; x = !y; z != w;");
+        let tokens = lexer.to_tokens().unwrap();
+
+        assert_eq!(tokens.len(), 15);
+
+        // a = b
+        assert!(matches!(tokens[0].kind, TokenKind::Identifier(ref s) if s == "a"));
+        assert_eq!(tokens[1].kind, TokenKind::Symbol(Symbol::Equal));
+        assert!(matches!(tokens[2].kind, TokenKind::Identifier(ref s) if s == "b"));
+
+        // b == c
+        assert_eq!(tokens[3].kind, TokenKind::Symbol(Symbol::EqualEqual));
+        assert!(matches!(tokens[4].kind, TokenKind::Identifier(ref s) if s == "c"));
+        assert_eq!(tokens[5].kind, TokenKind::Symbol(Symbol::Semicolon));
+
+        // x = !y
+        assert!(matches!(tokens[6].kind, TokenKind::Identifier(ref s) if s == "x"));
+        assert_eq!(tokens[7].kind, TokenKind::Symbol(Symbol::Equal));
+        assert_eq!(tokens[8].kind, TokenKind::Symbol(Symbol::Bang));
+        assert!(matches!(tokens[9].kind, TokenKind::Identifier(ref s) if s == "y"));
+        assert_eq!(tokens[10].kind, TokenKind::Symbol(Symbol::Semicolon));
+
+        // z != w
+        assert!(matches!(tokens[11].kind, TokenKind::Identifier(ref s) if s == "z"));
+        assert_eq!(tokens[12].kind, TokenKind::Symbol(Symbol::BangEqual));
+        assert!(matches!(tokens[13].kind, TokenKind::Identifier(ref s) if s == "w"));
     }
 }

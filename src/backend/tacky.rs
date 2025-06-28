@@ -1,7 +1,7 @@
-﻿use crate::frontend::ast;
+use crate::backend::tacky::Instruction::Jump;
+use crate::frontend::ast;
 use crate::frontend::ast::{BinaryOp, ExprKind, StmtKind, UnaryOp};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::backend::tacky::Instruction::Jump;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -131,13 +131,13 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
     match expr.kind {
         ExprKind::Binary(BinaryOp::And, left, right) => {
             let left = emit_tacky_expr(*left, instructions);
-            let false_label = make_label("false");
+            let false_label = make_label();
             instructions.push(Instruction::JumpIfZero(left, false_label.clone()));
             let right = emit_tacky_expr(*right, instructions);
             instructions.push(Instruction::JumpIfZero(right, false_label.clone()));
             let dst = Var(make_temporary());
             instructions.push(Instruction::Copy(Constant(1), dst.clone()));
-            let end_label = make_label("end");
+            let end_label = make_label();
             instructions.push(Jump(end_label.clone()));
             instructions.push(Instruction::Label(false_label));
             instructions.push(Instruction::Copy(Constant(0), dst.clone()));
@@ -146,13 +146,13 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
         }
         ExprKind::Binary(BinaryOp::Or, left, right) => {
             let left = emit_tacky_expr(*left, instructions);
-            let true_label = make_label("true");
+            let true_label = make_label();
             instructions.push(Instruction::JumpIfNotZero(left, true_label.clone()));
             let right = emit_tacky_expr(*right, instructions);
             instructions.push(Instruction::JumpIfNotZero(right, true_label.clone()));
             let dst = Var(make_temporary());
             instructions.push(Instruction::Copy(Constant(0), dst.clone()));
-            let end_label = make_label("end");
+            let end_label = make_label();
             instructions.push(Jump(end_label.clone()));
             instructions.push(Instruction::Label(true_label));
             instructions.push(Instruction::Copy(Constant(1), dst.clone()));
@@ -191,7 +191,7 @@ fn make_temporary() -> Identifier {
     format!("tmp.{}", COUNTER.fetch_add(1, Ordering::SeqCst))
 }
 
-fn make_label(prefix: &str) -> Identifier {
+fn make_label() -> Identifier {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     format!("{}", COUNTER.fetch_add(1, Ordering::SeqCst))
 }

@@ -1,1 +1,3 @@
+/examples/*.s
+/examples/*.i
 /target

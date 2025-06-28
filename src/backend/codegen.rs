@@ -1,4 +1,6 @@
-﻿use crate::backend::assembler::{BinaryOperator, CondCode, Function, Inst, Operand, Program, Register, UnaryOperator};
+use crate::backend::assembler::{
+    BinaryOperator, CondCode, Function, Inst, Operand, Program, Register, UnaryOperator,
+};
 
 pub fn codegen(assembly: Program) -> String {
     let mut code = assemble_function(assembly.function_definition);
@@ -40,14 +42,42 @@ fn assemble_instruction(inst: Inst) -> String {
             UnaryOperator::Not => format!("    notl {}", assemble_operand(dst, 4)),
         },
         Inst::Binary(op, right, dst) => match op {
-            BinaryOperator::Add => format!("    addl {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
-            BinaryOperator::Sub => format!("    subl {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
-            BinaryOperator::Mul => format!("    imull {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
-            BinaryOperator::Or => format!("    orl {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
-            BinaryOperator::And => format!("    andl {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
-            BinaryOperator::Xor => format!("    xorl {}, {}", assemble_operand(right, 4), assemble_operand(dst, 4)),
+            BinaryOperator::Add => format!(
+                "    addl {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
+            BinaryOperator::Sub => format!(
+                "    subl {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
+            BinaryOperator::Mul => format!(
+                "    imull {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
+            BinaryOperator::Or => format!(
+                "    orl {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
+            BinaryOperator::And => format!(
+                "    andl {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
+            BinaryOperator::Xor => format!(
+                "    xorl {}, {}",
+                assemble_operand(right, 4),
+                assemble_operand(dst, 4)
+            ),
         },
-        Inst::Cmp(left, right) => format!("    cmpl {}, {}", assemble_operand(left, 4), assemble_operand(right, 4)),
+        Inst::Cmp(left, right) => format!(
+            "    cmpl {}, {}",
+            assemble_operand(left, 4),
+            assemble_operand(right, 4)
+        ),
         Inst::Idiv(o) => format!("    idivl {}", assemble_operand(o, 4)),
         Inst::Cdq => "    cdq".to_string(),
         Inst::Jmp(label) => format!("    jmp {}", assemble_label(label)),

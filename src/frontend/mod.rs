@@ -1,7 +1,8 @@
-﻿pub mod cursor;
+pub mod ast;
+pub mod cursor;
+pub mod diagnostic;
 pub mod lexer;
-pub mod source_file;
+pub mod parser;
+pub mod source;
 pub mod span;
 pub mod token;
-pub mod ast;
-pub mod parser;

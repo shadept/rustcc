@@ -1,8 +1,12 @@
-﻿use crate::frontend::ast::{BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
+use crate::frontend::ast::{BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
+use crate::frontend::diagnostic::{Diagnostic};
 use crate::frontend::parser::ParserError::UnexpectedToken;
+use crate::frontend::source::SourceFile;
+use crate::frontend::span::Span;
 use crate::frontend::token::{Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 use std::vec::IntoIter;
 
 macro_rules! match_keyword {
@@ -40,12 +44,16 @@ macro_rules! match_symbol {
 #[derive(Debug)]
 pub struct Parser {
     tokens: IntoIter<Token>,
+    source_file: Arc<SourceFile>,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Self {
         let iter = tokens.into_iter();
-        Parser { tokens: iter }
+        Parser {
+            tokens: iter,
+            source_file,
+        }
     }
 
     pub fn parse(&mut self) -> Result<Program, ParserError> {
@@ -238,6 +246,12 @@ impl Parser {
         }
         Err(ParserError::EOT)
     }
+
+    /// Reports an error with a diagnostic message.
+    pub fn report_error(&self, error: &ParserError) {
+        let diagnostic = error.diagnostic(Arc::clone(&self.source_file));
+        eprintln!("{}", diagnostic);
+    }
 }
 
 #[derive(Debug)]
@@ -245,6 +259,33 @@ pub enum ParserError {
     UnexpectedToken(Token),
     UnconsumedToken(Token),
     EOT, // end-of-tokens
+}
+
+impl ParserError {
+    /// Creates a diagnostic for this error.
+    pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
+        match self {
+            ParserError::UnexpectedToken(token) => Diagnostic::error(
+                format!("Unexpected token `{}`", token.kind),
+                source_file,
+                token.span,
+            ),
+            ParserError::UnconsumedToken(token) => Diagnostic::error(
+                format!("Unconsumed token in stream `{}`", token.kind),
+                source_file,
+                token.span,
+            ),
+            ParserError::EOT => {
+                // For EOT, we don't have a span, so we use a default span at the end of the file
+                let span = if let Some(src) = &source_file.src {
+                    Span::new(src.len(), src.len())
+                } else {
+                    Span::default()
+                };
+                Diagnostic::error("Unexpected end of tokens".to_string(), source_file, span)
+            }
+        }
+    }
 }
 
 impl Display for ParserError {
