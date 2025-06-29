@@ -1,6 +1,7 @@
 mod backend;
 mod frontend;
 
+use crate::backend::analysis::resolve_program;
 use crate::backend::assembler;
 use crate::backend::assembler::assemble;
 use crate::backend::codegen::codegen;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 enum CompilationStage {
     Lex,
     Parse,
+    Validate,
     Tacky,
     Codegen,
     CodeEmit,
@@ -34,6 +36,7 @@ impl CompilationStage {
         match arg {
             "--lex" => Some(Self::Lex),
             "--parse" => Some(Self::Parse),
+            "--validate" => Some(Self::Validate),
             "--tacky" => Some(Self::Tacky),
             "--codegen" => Some(Self::Codegen),
             _ => None,
@@ -101,19 +104,25 @@ fn main() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    // Stage 3: Tacky IR generation
-    let tacky = emit_tacky(program);
+    // Stage 3: Perform Semantic Analysis
+    let validated_program = resolve_program(program)?;
+    if target_stage == CompilationStage::Validate {
+        return Ok(());
+    }
+
+    // Stage 4: Tacky IR generation
+    let tacky = emit_tacky(validated_program);
     if target_stage == CompilationStage::Tacky {
         return Ok(());
     }
 
-    // Stage 4: Assembly generation
+    // Stage 5: Assembly generation
     let assembly = assemble(tacky);
     if target_stage == CompilationStage::Codegen {
         return Ok(());
     }
 
-    // Stage 5: Code emission
+    // Stage 6: Code emission
     let assembly_file = input_file.replace(".c", ".s");
     let executable_file = input_file.replace(".c", "");
     run_code_emission(assembly, &assembly_file, &executable_file)?;

@@ -1,7 +1,7 @@
+use crate::backend::common::{make_label, make_temporary};
 use crate::backend::tacky::Instruction::Jump;
 use crate::frontend::ast;
-use crate::frontend::ast::{BinaryOp, ExprKind, StmtKind, UnaryOp};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::frontend::ast::{BinaryOp, BlockItem, DeclKind, Expr, ExprKind, StmtKind, UnaryOp};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -114,15 +114,42 @@ pub fn emit_tacky(program: ast::Program) -> Program {
 fn emit_tacky_function(function: ast::Function) -> Function {
     let mut instructions = Vec::new();
     if let Some(body) = function.body {
-        for stmt in body {
-            emit_tacky_stmt(stmt, &mut instructions);
+        for item in body {
+            match item {
+                BlockItem::Decl(decl) => emit_tacky_decl(decl, &mut instructions),
+                BlockItem::Stmt(stmt) => emit_tacky_stmt(stmt, &mut instructions),
+            }
         }
     }
+    instructions.push(Instruction::Return(Val::Constant(0))); // optimization will remove extra return if another return is present
     Function::new(function.name, instructions)
 }
+fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
+    match decl.kind {
+        DeclKind::Variable(name, init) => {
+            if let Some(init) = init {
+                let tmp_expr = Expr::new(
+                    ExprKind::Assignment(
+                        Expr::new(ExprKind::Var(name), decl.span).into(), // TODO decl.span should be the span of the variable name
+                        init.into(),
+                    ),
+                    decl.span,
+                );
+                emit_tacky_expr(tmp_expr, instructions);
+            }
+        }
+    };
+}
+
 fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
     match stmt.kind {
-        StmtKind::Expr(expr) => emit_tacky_expr(*expr, instructions),
+        StmtKind::Return(expr) => {
+            emit_tacky_expr(*expr, instructions);
+        }
+        StmtKind::Expr(expr) => {
+            emit_tacky_expr(*expr, instructions);
+        }
+        StmtKind::Null => {}
     };
 }
 
@@ -183,15 +210,14 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             instructions.push(Instruction::Unary(op.into(), src, dst.clone()));
             dst
         }
+        ExprKind::Var(name) => Var(name),
+        ExprKind::Assignment(lhs, rhs) => match lhs.kind {
+            ExprKind::Var(name) => {
+                let result = emit_tacky_expr(*rhs, instructions);
+                instructions.push(Instruction::Copy(result, Var(name.clone())));
+                Var(name)
+            }
+            _ => panic!("invalid assignment"),
+        },
     }
-}
-
-fn make_temporary() -> Identifier {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    format!("tmp.{}", COUNTER.fetch_add(1, Ordering::SeqCst))
-}
-
-fn make_label() -> Identifier {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    format!("{}", COUNTER.fetch_add(1, Ordering::SeqCst))
 }

@@ -1,4 +1,5 @@
-﻿use crate::frontend::span::Span;
+﻿use crate::backend::tacky::Identifier;
+use crate::frontend::span::Span;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -19,7 +20,7 @@ pub struct Function {
     pub body: Option<Block>,
 }
 
-pub type Block = Vec<Stmt>;
+pub type Block = Vec<BlockItem>;
 
 impl Function {
     pub fn new(name: String, body: Block) -> Self {
@@ -31,8 +32,39 @@ impl Function {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum BlockItem {
+    Decl(Decl),
+    Stmt(Stmt),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeclKind {
+    Variable(Identifier, Option<Expr>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decl {
+    pub kind: DeclKind,
+    pub span: Span,
+}
+
+impl Decl {
+    pub fn new(kind: DeclKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
     Expr(Box<Expr>),
+    Null,
+    Return(Box<Expr>),
+}
+
+impl StmtKind {
+    pub fn into_stmt(self, span: Span) -> Stmt {
+        Stmt::new(self, span)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,10 +81,12 @@ impl Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
+    Assignment(Box<Expr>, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Constant(i32),
     Return(Option<Box<Expr>>),
     Unary(UnaryOp, Box<Expr>),
+    Var(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq)]

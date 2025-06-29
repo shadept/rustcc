@@ -1,5 +1,7 @@
-use crate::frontend::ast::{BinaryOp, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp};
-use crate::frontend::diagnostic::{Diagnostic};
+use crate::frontend::ast::{
+    BinaryOp, BlockItem, Decl, DeclKind, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp,
+};
+use crate::frontend::diagnostic::Diagnostic;
 use crate::frontend::parser::ParserError::UnexpectedToken;
 use crate::frontend::source::SourceFile;
 use crate::frontend::span::Span;
@@ -67,7 +69,7 @@ impl Parser {
 
     pub fn parse_function(&mut self) -> Result<Function, ParserError> {
         self.expect_keyword(Keyword::Int)?;
-        let name = self.expect_ident()?;
+        let name = self.expect_identifier()?;
         self.expect_symbol(Symbol::OpenParen)?;
         self.expect_keyword(Keyword::Void)?;
         self.expect_symbol(Symbol::CloseParen)?;
@@ -75,20 +77,48 @@ impl Parser {
         Ok(Function::new(name, body))
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Stmt>, ParserError> {
+    fn parse_block(&mut self) -> Result<Vec<BlockItem>, ParserError> {
         self.expect_symbol(Symbol::OpenBrace)?;
-        let stmt = self.parse_statement()?;
-        self.expect_symbol(Symbol::CloseBrace)?;
-        Ok(vec![stmt])
+        let mut items = vec![];
+        while match_symbol!(self, Symbol::CloseBrace).is_none() {
+            if let Some(tok) = self.peek() {
+                if tok.kind == TokenKind::Keyword(Keyword::Int) {
+                    let decl = self.parse_declaration()?;
+                    items.push(BlockItem::Decl(decl));
+                    continue;
+                }
+            }
+            let stmt = self.parse_statement()?;
+            items.push(BlockItem::Stmt(stmt));
+        }
+        Ok(items)
+    }
+
+    fn parse_declaration(&mut self) -> Result<Decl, ParserError> {
+        if let Some((_, span)) = match_keyword!(self, Keyword::Int) {
+            let identifier = self.expect_identifier()?;
+            let init = if match_symbol!(self, Symbol::Equal).is_some() {
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            };
+            self.expect_symbol(Symbol::Semicolon)?;
+            return Ok(Decl::new(DeclKind::Variable(identifier, init), span));
+        }
+        Err(UnexpectedToken(self.peek().unwrap()))
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
+        if let Some((_, span)) = match_symbol!(self, Symbol::Semicolon) {
+            return Ok(Stmt::new(StmtKind::Null, span));
+        }
+
         let ret: Result<Stmt, ParserError>;
         if let Some((_, span)) = match_keyword!(self, Keyword::Return) {
             let expr1 = self.parse_expression(0)?;
             let span1 = expr1.span;
             let expr = Expr::new(ExprKind::Return(Some(Box::from(expr1))), span1);
-            ret = Ok(Stmt::new(StmtKind::Expr(Box::from(expr)), span));
+            ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), span));
         } else {
             let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
@@ -99,21 +129,46 @@ impl Parser {
     }
 
     fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParserError> {
-        let mut left = self.parse_factor()?;
-        loop {
-            if let Some(token) = self.peek() {
-                if let Some(op) = self.parse_binary_op(&token) {
-                    let precedence = self.binop_precedence(&op);
+        let left = self.parse_factor()?;
+        self.parse_binary_expression(left, min_precedence)
+    }
+
+    fn parse_binary_expression(
+        &mut self,
+        left: Expr,
+        min_precedence: u8,
+    ) -> Result<Expr, ParserError> {
+        match self.peek() {
+            Some(token) => {
+                let precedence = self.binop_precedence(&token.kind);
+                if precedence.is_none() {
+                    return Ok(left);
+                }
+
+                let precedence = precedence.unwrap();
+                if token.kind == TokenKind::Symbol(Symbol::Equal) {
+                    // Right associative operators
+                    self.advance().unwrap();
+                    let right = self.parse_expression(precedence)?;
+                    let span = left.span + right.span;
+                    let new_left = Expr::new(ExprKind::Assignment(left.into(), right.into()), span);
+                    self.parse_binary_expression(new_left, precedence)
+                } else {
+                    // Left associative operators
                     if precedence >= min_precedence {
                         self.advance().unwrap();
+                        let op = self.parse_binary_op(&token).unwrap();
                         let right = self.parse_expression(precedence + 1)?;
                         let span = left.span + right.span;
-                        left = Expr::new(ExprKind::Binary(op, left.into(), right.into()), span);
-                        continue;
+                        let new_left =
+                            Expr::new(ExprKind::Binary(op, left.into(), right.into()), span);
+                        self.parse_binary_expression(new_left, precedence)
+                    } else {
+                        Ok(left)
                     }
                 }
             }
-            break Ok(left);
+            None => Ok(left),
         }
     }
 
@@ -130,6 +185,10 @@ impl Parser {
                 self.advance().unwrap();
                 Ok(Expr::new(ExprKind::Constant(n as i32), token.span))
             }
+            TokenKind::Identifier(ident) => {
+                self.advance().unwrap();
+                Ok(Expr::new(ExprKind::Var(ident), token.span))
+            }
             TokenKind::Symbol(Symbol::OpenParen) => {
                 self.advance().unwrap();
                 let expr = self.parse_expression(0)?;
@@ -138,6 +197,19 @@ impl Parser {
             }
             _ => Err(UnexpectedToken(token)),
         }
+    }
+
+    fn parse_identifier(&mut self) -> Result<Expr, ParserError> {
+        if let Some(tok) = self.peek() {
+            return match tok.kind {
+                TokenKind::Identifier(ident) => {
+                    self.advance().unwrap();
+                    Ok(Expr::new(ExprKind::Var(ident), tok.span))
+                }
+                _ => Err(UnexpectedToken(tok)),
+            };
+        }
+        Err(ParserError::EOT)
     }
 
     fn parse_unary_op(&self, token: &Token) -> Option<UnaryOp> {
@@ -179,24 +251,30 @@ impl Parser {
         }
     }
 
-    fn binop_precedence(&self, op: &BinaryOp) -> u8 {
-        match op {
-            BinaryOp::Add => 45,
-            BinaryOp::Subtract => 45,
-            BinaryOp::Multiply => 50,
-            BinaryOp::Divide => 50,
-            BinaryOp::Remainder => 50,
-            BinaryOp::BitwiseOr => 30,
-            BinaryOp::BitwiseAnd => 35,
-            BinaryOp::BitwiseXor => 40,
-            BinaryOp::And => 10,
-            BinaryOp::Or => 5,
-            BinaryOp::Equal => 30,
-            BinaryOp::NotEqual => 30,
-            BinaryOp::LessThan => 35,
-            BinaryOp::LessThanOrEqual => 35,
-            BinaryOp::GreaterThan => 35,
-            BinaryOp::GreaterThanOrEqual => 35,
+    fn binop_precedence(&self, op: &TokenKind) -> Option<u8> {
+        if let TokenKind::Symbol(sym) = op {
+            match sym {
+                Symbol::Plus => Some(45),
+                Symbol::Minus => Some(45),
+                Symbol::Star => Some(50),
+                Symbol::Slash => Some(50),
+                Symbol::Percent => Some(50),
+                Symbol::Pipe => Some(30),
+                Symbol::Ampersand => Some(35),
+                Symbol::Caret => Some(40),
+                Symbol::AmpersandAmpersand => Some(10),
+                Symbol::PipePipe => Some(5),
+                Symbol::EqualEqual => Some(30),
+                Symbol::BangEqual => Some(30),
+                Symbol::LessThan => Some(35),
+                Symbol::GreaterThan => Some(35),
+                Symbol::LessThanOrEqual => Some(35),
+                Symbol::GreaterThanOrEqual => Some(35),
+                Symbol::Equal => Some(1),
+                _ => None,
+            }
+        } else {
+            None
         }
     }
 
@@ -214,7 +292,7 @@ impl Parser {
         self.tokens.next()
     }
 
-    fn expect_ident(&mut self) -> Result<String, ParserError> {
+    fn expect_identifier(&mut self) -> Result<String, ParserError> {
         if let Some(tok) = self.peek() {
             return match tok.kind {
                 TokenKind::Identifier(ident) => {
