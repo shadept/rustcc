@@ -1,4 +1,4 @@
-use crate::frontend::diagnostic::{Diagnostic};
+use crate::frontend::diagnostic::Diagnostic;
 use crate::frontend::source::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::token::{Bits, Keyword, Symbol, Token, TokenKind};
@@ -115,6 +115,13 @@ impl<'src> Lexer<'src> {
                 while let Some(c) = self.advance() {
                     if c == '*' && self.peek() == Some('/') {
                         self.advance();
+                        break;
+                    }
+                }
+            } else if cfg!(windows) && c == '#' {
+                self.advance();
+                while let Some(c) = self.advance() {
+                    if c == '\n' {
                         break;
                     }
                 }
@@ -448,13 +455,17 @@ mod tests {
         assert_eq!(tokens[2].kind, TokenKind::Symbol(Symbol::LessThan));
         assert_eq!(tokens[3].kind, TokenKind::Symbol(Symbol::GreaterThan));
         assert_eq!(tokens[4].kind, TokenKind::Symbol(Symbol::LessThanOrEqual));
-        assert_eq!(tokens[5].kind, TokenKind::Symbol(Symbol::GreaterThanOrEqual));
+        assert_eq!(
+            tokens[5].kind,
+            TokenKind::Symbol(Symbol::GreaterThanOrEqual)
+        );
         assert_eq!(tokens[6].kind, TokenKind::Symbol(Symbol::Bang));
     }
 
     #[test]
     fn test_comparison_operators_in_expressions() {
-        let lexer = Lexer::new("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
+        let lexer =
+            Lexer::new("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
         let tokens = lexer.to_tokens().unwrap();
 
         // Verify key tokens in the expression
