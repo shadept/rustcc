@@ -1,7 +1,7 @@
 mod backend;
 mod frontend;
 
-use crate::backend::analysis::resolve_program;
+use crate::backend::analysis::{SemanticError, resolve_program};
 use crate::backend::assembler;
 use crate::backend::assembler::assemble;
 use crate::backend::codegen::codegen;
@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Write, stdout};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, exit};
 use std::sync::Arc;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Copy)]
@@ -99,13 +99,13 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Stage 2: Parsing
-    let program = run_parser(tokens, source_file)?;
+    let program = run_parser(tokens, source_file.clone());
     if target_stage == CompilationStage::Parse {
         return Ok(());
     }
 
     // Stage 3: Perform Semantic Analysis
-    let validated_program = resolve_program(program)?;
+    let validated_program = run_validate(program, source_file);
     if target_stage == CompilationStage::Validate {
         return Ok(());
     }
@@ -188,20 +188,32 @@ fn run_lexer(
             // Report the error with diagnostics
             let diagnostic = err.diagnostic(source_file.clone());
             eprintln!("{}", diagnostic);
-            Err(err.into())
+            exit(1);
         }
     }
 }
 
-fn run_parser(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Result<Program, ParserError> {
+fn run_parser(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Program {
     let mut parser = Parser::new(tokens, source_file.clone());
     match parser.parse() {
-        Ok(program) => Ok(program),
+        Ok(program) => program,
         Err(err) => {
             // Report the error with diagnostics
             let diagnostic = err.diagnostic(source_file);
             eprintln!("{}", diagnostic);
-            Err(err)
+            exit(1);
+        }
+    }
+}
+
+fn run_validate(program: Program, source_file: Arc<SourceFile>) -> Program {
+    match resolve_program(program) {
+        Ok(validated_program) => validated_program,
+        Err(err) => {
+            // Report the error with diagnostics
+            let diagnostic = err.diagnostic(source_file);
+            eprintln!("{}", diagnostic);
+            exit(1);
         }
     }
 }

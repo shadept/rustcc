@@ -92,6 +92,16 @@ impl Diagnostic {
             column_start.to_string().cyan()
         ));
 
+        // Add the previous line if it exists
+        if line_number > 1 {
+            let prev_line = self.get_line(src, line_number - 1);
+            result.push_str(&format!("{:4} {} {}\n", 
+                (line_number - 1).to_string().cyan(), 
+                "|".cyan().bold(),
+                prev_line
+            ));
+        }
+
         // Add the source line
         let line = self.get_line(src, line_number);
         result.push_str(&format!("{:4} {} {}\n", 
@@ -113,6 +123,16 @@ impl Diagnostic {
             " ".repeat(column_start),
             highlight_color
         ));
+
+        // Add the next line if it exists
+        let next_line = self.get_line(src, line_number + 1);
+        if !next_line.is_empty() {
+            result.push_str(&format!("{:4} {} {}\n", 
+                (line_number + 1).to_string().cyan(), 
+                "|".cyan().bold(),
+                next_line
+            ));
+        }
 
         result
     }

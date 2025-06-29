@@ -3,8 +3,12 @@ use crate::backend::tacky::Identifier;
 use crate::frontend::ast::{
     BlockItem, Decl, DeclKind, Expr, ExprKind, Function, Program, Stmt, StmtKind,
 };
+use crate::frontend::diagnostic::Diagnostic;
+use crate::frontend::parser::ParserError;
+use crate::frontend::source::SourceFile;
 use crate::frontend::span::Span;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 type VariableMap = HashMap<Identifier, Identifier>;
 
@@ -42,7 +46,7 @@ fn resolve_variable_decl(
     map: &mut VariableMap,
 ) -> Result<Decl, SemanticError> {
     if map.contains_key(&name) {
-        return Err(SemanticError::DuplicatedVariableDeclaration(name));
+        return Err(SemanticError::DuplicatedVariableDeclaration(name, span));
     }
     let unique_name = make_unique(&name);
     map.insert(name, unique_name.clone());
@@ -103,7 +107,7 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
             if map.contains_key(name) {
                 Ok(Expr::new(ExprKind::Var(map[name].clone()), expr.span))
             } else {
-                Err(SemanticError::UndeclaredVariable(name.clone()))
+                Err(SemanticError::UndeclaredVariable(name.clone(), expr.span))
             }
         }
     }
@@ -111,19 +115,37 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
 
 #[derive(Debug)]
 pub enum SemanticError {
-    DuplicatedVariableDeclaration(Identifier),
+    DuplicatedVariableDeclaration(Identifier, Span),
     InvalidLValue(Box<Expr>),
-    UndeclaredVariable(Identifier),
+    UndeclaredVariable(Identifier, Span),
+}
+
+impl SemanticError {
+    pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
+        match self {
+            SemanticError::DuplicatedVariableDeclaration(name, span) => {
+                Diagnostic::error(self.to_string(), source_file, *span)
+            }
+            SemanticError::InvalidLValue(token) => {
+                Diagnostic::error(self.to_string(), source_file, token.span)
+            }
+            SemanticError::UndeclaredVariable(name, span) => {
+                Diagnostic::error(self.to_string(), source_file, *span)
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for SemanticError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticError::DuplicatedVariableDeclaration(name) => {
+            SemanticError::DuplicatedVariableDeclaration(name, span) => {
                 write!(f, "duplicated variable declaration: {}", name)
             }
             SemanticError::InvalidLValue(_) => write!(f, "invalid lvalue"),
-            SemanticError::UndeclaredVariable(name) => write!(f, "undeclared variable: {}", name),
+            SemanticError::UndeclaredVariable(name, span) => {
+                write!(f, "undeclared variable: {}", name)
+            }
         }
     }
 }

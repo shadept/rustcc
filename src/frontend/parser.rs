@@ -152,7 +152,7 @@ impl Parser {
                     let right = self.parse_expression(precedence)?;
                     let span = left.span + right.span;
                     let new_left = Expr::new(ExprKind::Assignment(left.into(), right.into()), span);
-                    self.parse_binary_expression(new_left, precedence)
+                    self.parse_binary_expression(new_left, min_precedence)
                 } else {
                     // Left associative operators
                     if precedence >= min_precedence {
@@ -162,7 +162,7 @@ impl Parser {
                         let span = left.span + right.span;
                         let new_left =
                             Expr::new(ExprKind::Binary(op, left.into(), right.into()), span);
-                        self.parse_binary_expression(new_left, precedence)
+                        self.parse_binary_expression(new_left, min_precedence)
                     } else {
                         Ok(left)
                     }
