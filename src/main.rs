@@ -101,6 +101,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Stage 2: Parsing
     let program = run_parser(tokens, source_file.clone());
     if target_stage == CompilationStage::Parse {
+        program.pretty_print(stdout())?;
         return Ok(());
     }
 

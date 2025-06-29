@@ -1,5 +1,6 @@
 ﻿use crate::backend::tacky::Identifier;
 use crate::frontend::span::Span;
+use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -11,6 +12,13 @@ impl Program {
         Self {
             function_definition,
         }
+    }
+
+    /// Pretty prints the AST to the given writer.
+    pub fn pretty_print<W: Write>(&self, writer: W) -> io::Result<()> {
+        use crate::frontend::ast_printer::AstPrinter;
+        let mut printer = AstPrinter::new(writer);
+        printer.print_program(self)
     }
 }
 

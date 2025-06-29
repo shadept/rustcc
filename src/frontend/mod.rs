@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod ast_printer;
 pub mod cursor;
 pub mod diagnostic;
 pub mod lexer;

@@ -138,38 +138,30 @@ impl Parser {
         left: Expr,
         min_precedence: u8,
     ) -> Result<Expr, ParserError> {
-        match self.peek() {
-            Some(token) => {
-                let precedence = self.binop_precedence(&token.kind);
-                if precedence.is_none() {
-                    return Ok(left);
+        let mut left = left;
+        while let Some(token) = self.peek() {
+            let precedence = self.binop_precedence(&token.kind);
+            if let Some(precedence) = precedence {
+                if precedence < min_precedence {
+                    break;
                 }
-
-                let precedence = precedence.unwrap();
-                if token.kind == TokenKind::Symbol(Symbol::Equal) {
-                    // Right associative operators
-                    self.advance().unwrap();
+                self.advance().unwrap();
+                left = if token.kind == TokenKind::Symbol(Symbol::Equal) {
                     let right = self.parse_expression(precedence)?;
-                    let span = left.span + right.span;
-                    let new_left = Expr::new(ExprKind::Assignment(left.into(), right.into()), span);
-                    self.parse_binary_expression(new_left, min_precedence)
+                    let span = left.span + token.span + right.span;
+                    Expr::new(ExprKind::Assignment(left.into(), right.into()), span)
                 } else {
-                    // Left associative operators
-                    if precedence >= min_precedence {
-                        self.advance().unwrap();
-                        let op = self.parse_binary_op(&token).unwrap();
-                        let right = self.parse_expression(precedence + 1)?;
-                        let span = left.span + right.span;
-                        let new_left =
-                            Expr::new(ExprKind::Binary(op, left.into(), right.into()), span);
-                        self.parse_binary_expression(new_left, min_precedence)
-                    } else {
-                        Ok(left)
-                    }
+                    let op = self.parse_binary_op(&token).unwrap();
+                    let right = self.parse_expression(precedence + 1)?;
+                    let span = left.span + token.span + right.span;
+                    Expr::new(ExprKind::Binary(op, left.into(), right.into()), span)
                 }
+            } else {
+                break;
             }
-            None => Ok(left),
         }
+
+        Ok(left)
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
