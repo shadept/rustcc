@@ -65,6 +65,7 @@ impl Decl {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
     Expr(Box<Expr>),
+    If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Null,
     Return(Box<Expr>),
 }
@@ -91,6 +92,7 @@ impl Stmt {
 pub enum ExprKind {
     Assignment(Box<Expr>, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
+    Cond(Box<Expr>, Box<Expr>, Box<Expr>),
     Constant(i32),
     Return(Option<Box<Expr>>),
     Unary(UnaryOp, Box<Expr>),

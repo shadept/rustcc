@@ -54,6 +54,7 @@ impl<'src> Lexer<'src> {
             '}' => self.create_token_from_symbol(Symbol::CloseBrace),
             '[' => self.create_token_from_symbol(Symbol::OpenBracket),
             ']' => self.create_token_from_symbol(Symbol::CloseBracket),
+            ':' => self.create_token_from_symbol(Symbol::Colon),
             ';' => self.create_token_from_symbol(Symbol::Semicolon),
             '~' => self.create_token_from_symbol(Symbol::Tilde),
             '+' => self.create_token_from_symbol(Symbol::Plus),
@@ -72,6 +73,7 @@ impl<'src> Lexer<'src> {
                 let sym = self.if_match_char('=', Symbol::BangEqual, Symbol::Bang);
                 self.create_token_from_symbol(sym)
             }
+            '?' => self.create_token_from_symbol(Symbol::Question),
             '|' => {
                 let sym = self.if_match_char('|', Symbol::PipePipe, Symbol::Pipe);
                 self.create_token_from_symbol(sym)

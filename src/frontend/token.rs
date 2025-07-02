@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Keyword {
+    Else,
+    If,
     Int,
     Void,
     Return,
@@ -13,6 +15,8 @@ impl TryFrom<&str> for Keyword {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "else" => Ok(Keyword::Else),
+            "if" => Ok(Keyword::If),
             "int" => Ok(Keyword::Int),
             "void" => Ok(Keyword::Void),
             "return" => Ok(Keyword::Return),
@@ -24,6 +28,8 @@ impl TryFrom<&str> for Keyword {
 impl Display for Keyword {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Keyword::Else => write!(f, "else"),
+            Keyword::If => write!(f, "if"),
             Keyword::Int => write!(f, "int"),
             Keyword::Void => write!(f, "void"),
             Keyword::Return => write!(f, "return"),
@@ -54,6 +60,7 @@ pub enum Symbol {
     Ampersand, // Bitwise AND (&)
     Caret,     // Bitwise XOR (^)
     Bang,
+    Question,
     Equal,
     AmpersandAmpersand,
     PipePipe,
@@ -89,6 +96,7 @@ impl Display for Symbol {
             Symbol::Ampersand => "&",
             Symbol::Caret => "^",
             Symbol::Bang => "!",
+            Symbol::Question => "?",
             Symbol::Equal => "=",
             Symbol::AmpersandAmpersand => "&&",
             Symbol::PipePipe => "||",

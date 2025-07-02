@@ -84,6 +84,28 @@ impl<W: Write> AstPrinter<W> {
                 self.print_expr(expr)?;
                 self.indent -= 2;
             }
+            StmtKind::If(condition, then_stmt, else_stmt) => {
+                writeln!(self.writer, "Statement: If")?;
+                self.indent += 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Condition:")?;
+                self.indent += 2;
+                self.print_expr(condition)?;
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Then:")?;
+                self.indent += 2;
+                self.print_stmt(then_stmt)?;
+                self.indent -= 2;
+                if let Some(else_stmt) = else_stmt {
+                    self.print_indent()?;
+                    writeln!(self.writer, "Else:")?;
+                    self.indent += 2;
+                    self.print_stmt(else_stmt)?;
+                    self.indent -= 2;
+                }
+                self.indent -= 2;
+            }
             StmtKind::Null => {
                 writeln!(self.writer, "Statement: Null")?;
             }
@@ -127,6 +149,25 @@ impl<W: Write> AstPrinter<W> {
                 writeln!(self.writer, "Right operand:")?;
                 self.indent += 2;
                 self.print_expr(rhs)?;
+                self.indent -= 4;
+            }
+            ExprKind::Cond(cond, then_expr, else_expr) => {
+                writeln!(self.writer, "Expression: Conditional")?;
+                self.indent += 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Condition:")?;
+                self.indent += 2;
+                self.print_expr(cond)?;
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Then expression:")?;
+                self.indent += 2;
+                self.print_expr(then_expr)?;
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Else expression:")?;
+                self.indent += 2;
+                self.print_expr(else_expr)?;
                 self.indent -= 4;
             }
             ExprKind::Constant(value) => {

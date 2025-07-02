@@ -62,10 +62,11 @@ fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError
         StmtKind::Expr(expr) => {
             Ok(StmtKind::Expr(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
+        StmtKind::If(_, _, _) => todo!(),
+        StmtKind::Null => Ok(stmt),
         StmtKind::Return(expr) => {
             Ok(StmtKind::Return(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
-        StmtKind::Null => Ok(stmt),
     }
 }
 
@@ -91,6 +92,7 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
             ),
             expr.span,
         )),
+        ExprKind::Cond(_, _, _) => todo!(),
         ExprKind::Constant(literal) => {
             Ok(Expr::new(ExprKind::Constant(literal.clone()), expr.span))
         }

@@ -143,13 +143,14 @@ fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
 
 fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
     match stmt.kind {
-        StmtKind::Return(expr) => {
-            emit_tacky_expr(*expr, instructions);
-        }
         StmtKind::Expr(expr) => {
             emit_tacky_expr(*expr, instructions);
         }
+        StmtKind::If(_, _, _) => todo!(),
         StmtKind::Null => {}
+        StmtKind::Return(expr) => {
+            emit_tacky_expr(*expr, instructions);
+        }
     };
 }
 
@@ -194,6 +195,7 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             instructions.push(Instruction::Binary(op.into(), left, right, dst.clone()));
             dst
         }
+        ExprKind::Cond(_, _, _) => todo!(),
         ExprKind::Constant(c) => Constant(c),
         ExprKind::Return(maybe_inner) => {
             let src = match maybe_inner {

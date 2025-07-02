@@ -119,6 +119,8 @@ impl Parser {
             let span1 = expr1.span;
             let expr = Expr::new(ExprKind::Return(Some(Box::from(expr1))), span1);
             ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), span));
+        } else if let Some((_, span)) = match_keyword!(self, Keyword::If) {
+            return self.parse_if_stmt(span);
         } else {
             let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
@@ -126,6 +128,24 @@ impl Parser {
         }
         self.expect_symbol(Symbol::Semicolon)?;
         ret
+    }
+
+    fn parse_if_stmt(&mut self, if_span: Span) -> Result<Stmt, ParserError> {
+        // let if_tok = self.expect_keyword(Keyword::If)?;
+        self.expect_symbol(Symbol::OpenParen)?;
+        let cond = self.parse_expression(0)?;
+        self.expect_symbol(Symbol::CloseParen)?;
+        let then_stmt = self.parse_statement()?;
+        let else_stmt = if match_keyword!(self, Keyword::Else).is_some() {
+            Some(self.parse_statement()?)
+        } else {
+            None
+        };
+        let span = if_span + else_stmt.clone().unwrap_or_else(|| then_stmt.clone()).span;
+        Ok(Stmt::new(
+            StmtKind::If(cond.into(), then_stmt.into(), else_stmt.map(|f| f.into())),
+            span,
+        ))
     }
 
     fn parse_expression(&mut self, min_precedence: u8) -> Result<Expr, ParserError> {
@@ -150,6 +170,14 @@ impl Parser {
                     let right = self.parse_expression(precedence)?;
                     let span = left.span + token.span + right.span;
                     Expr::new(ExprKind::Assignment(left.into(), right.into()), span)
+                } else if token.kind == TokenKind::Symbol(Symbol::Question) {
+                    let middle = self.parse_conditional_middle()?;
+                    let right = self.parse_expression(precedence)?;
+                    let span = left.span + right.span;
+                    Expr::new(
+                        ExprKind::Cond(left.into(), middle.into(), right.into()),
+                        span,
+                    )
                 } else {
                     let op = self.parse_binary_op(&token).unwrap();
                     let right = self.parse_expression(precedence + 1)?;
@@ -162,6 +190,12 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    fn parse_conditional_middle(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_expression(0)?;
+        self.expect_symbol(Symbol::Colon)?;
+        Ok(expr)
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
@@ -262,6 +296,7 @@ impl Parser {
                 Symbol::GreaterThan => Some(35),
                 Symbol::LessThanOrEqual => Some(35),
                 Symbol::GreaterThanOrEqual => Some(35),
+                Symbol::Question => Some(3),
                 Symbol::Equal => Some(1),
                 _ => None,
             }
