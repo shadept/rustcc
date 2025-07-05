@@ -62,7 +62,15 @@ fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError
         StmtKind::Expr(expr) => {
             Ok(StmtKind::Expr(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
-        StmtKind::If(_, _, _) => todo!(),
+        StmtKind::If(cond, if_true, if_false) => Ok(StmtKind::If(
+            resolve_expr(&cond, map)?.into(),
+            resolve_stmt(*if_true, map)?.into(),
+            match if_false {
+                Some(if_false) => Some(resolve_stmt(*if_false, map)?.into()),
+                None => None,
+            },
+        )
+        .into_stmt(stmt.span)),
         StmtKind::Null => Ok(stmt),
         StmtKind::Return(expr) => {
             Ok(StmtKind::Return(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
@@ -92,7 +100,14 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
             ),
             expr.span,
         )),
-        ExprKind::Cond(_, _, _) => todo!(),
+        ExprKind::Cond(cond, if_true, if_false) => Ok(Expr::new(
+            ExprKind::Cond(
+                resolve_expr(&cond, map)?.into(),
+                resolve_expr(&if_true, map)?.into(),
+                resolve_expr(&if_false, map)?.into(),
+            ),
+            expr.span,
+        )),
         ExprKind::Constant(literal) => {
             Ok(Expr::new(ExprKind::Constant(literal.clone()), expr.span))
         }
