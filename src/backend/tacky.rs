@@ -1,5 +1,4 @@
 use crate::backend::common::{make_label, make_temporary};
-use crate::backend::tacky::Instruction::Jump;
 use crate::frontend::ast;
 use crate::frontend::ast::{BinaryOp, BlockItem, DeclKind, Expr, ExprKind, StmtKind, UnaryOp};
 
@@ -146,7 +145,19 @@ fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
         StmtKind::Expr(expr) => {
             emit_tacky_expr(*expr, instructions);
         }
-        StmtKind::If(_, _, _) => todo!(),
+        StmtKind::If(cond, then, maybe_else) => {
+            let c = emit_tacky_expr(*cond, instructions);
+            let else_label = make_label();
+            let end_label = make_label();
+            instructions.push(Instruction::JumpIfZero(c, else_label.clone()));
+            emit_tacky_stmt(*then, instructions);
+            instructions.push(Instruction::Jump(end_label.clone()));
+            instructions.push(Instruction::Label(else_label));
+            if let Some(else_stmt) = maybe_else {
+                emit_tacky_stmt(*else_stmt, instructions);
+            }
+            instructions.push(Instruction::Label(end_label));
+        }
         StmtKind::Null => {}
         StmtKind::Return(expr) => {
             emit_tacky_expr(*expr, instructions);
@@ -166,7 +177,7 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             let dst = Var(make_temporary());
             instructions.push(Instruction::Copy(Constant(1), dst.clone()));
             let end_label = make_label();
-            instructions.push(Jump(end_label.clone()));
+            instructions.push(Instruction::Jump(end_label.clone()));
             instructions.push(Instruction::Label(false_label));
             instructions.push(Instruction::Copy(Constant(0), dst.clone()));
             instructions.push(Instruction::Label(end_label));
@@ -181,7 +192,7 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             let dst = Var(make_temporary());
             instructions.push(Instruction::Copy(Constant(0), dst.clone()));
             let end_label = make_label();
-            instructions.push(Jump(end_label.clone()));
+            instructions.push(Instruction::Jump(end_label.clone()));
             instructions.push(Instruction::Label(true_label));
             instructions.push(Instruction::Copy(Constant(1), dst.clone()));
             instructions.push(Instruction::Label(end_label));
@@ -195,7 +206,22 @@ fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val 
             instructions.push(Instruction::Binary(op.into(), left, right, dst.clone()));
             dst
         }
-        ExprKind::Cond(_, _, _) => todo!(),
+        ExprKind::Cond(cond, if_true, if_false) => {
+            let c = emit_tacky_expr(*cond, instructions);
+            let dst_name = make_temporary();
+            let dst = Var(dst_name);
+            let else_label = make_label();
+            let end_label = make_label();
+            instructions.push(Instruction::JumpIfZero(c, else_label.clone()));
+            let e1 = emit_tacky_expr(*if_true, instructions);
+            instructions.push(Instruction::Copy(e1, dst.clone()));
+            instructions.push(Instruction::Jump(end_label.clone()));
+            instructions.push(Instruction::Label(else_label));
+            let e2 = emit_tacky_expr(*if_false, instructions);
+            instructions.push(Instruction::Copy(e2, dst.clone()));
+            instructions.push(Instruction::Label(end_label));
+            dst
+        }
         ExprKind::Constant(c) => Constant(c),
         ExprKind::Return(maybe_inner) => {
             let src = match maybe_inner {
