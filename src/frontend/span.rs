@@ -5,6 +5,7 @@
 /// is generated from a different source file has undefined behavior.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Span {
+    // pub source_file: Option<Arc<SourceFile>>,
     pub start: usize,
     pub end: usize,
 }

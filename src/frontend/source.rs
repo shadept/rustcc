@@ -1,5 +1,4 @@
 ﻿use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum FileName {
@@ -16,5 +15,21 @@ impl From<PathBuf> for FileName {
 #[derive(Debug)]
 pub struct SourceFile {
     pub name: FileName,
-    pub src: Option<Arc<String>>,
+    pub content: String,
+}
+
+impl SourceFile {
+    pub fn new(name: PathBuf, content: String) -> Self {
+        SourceFile {
+            name: FileName::Real(name),
+            content,
+        }
+    }
+
+    pub fn new_anon<S: Into<String>>(content: S) -> Self {
+        SourceFile {
+            name: FileName::Anon(0),
+            content: content.into(),
+        }
+    }
 }

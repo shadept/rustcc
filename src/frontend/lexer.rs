@@ -4,26 +4,28 @@ use crate::frontend::span::Span;
 use crate::frontend::token::{Bits, Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::str::Chars;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub struct Lexer<'src> {
-    src: &'src str,
-    chars: Chars<'src>,
+#[derive(Debug)]
+pub struct Lexer {
+    source: Arc<SourceFile>,
+    position: usize, // in bytes
     index: usize,
     start: usize,
 }
 
-impl<'src> Lexer<'src> {
-    pub fn new(src: &'src str) -> Lexer<'src> {
-        let chars = src.chars();
+impl Lexer {
+    pub fn new(source: Arc<SourceFile>) -> Lexer {
         Lexer {
-            src,
-            chars,
+            source,
+            position: 0,
             index: 0,
             start: 0,
         }
+    }
+    
+    pub fn new_from_str(source: &str) -> Lexer {
+        Lexer::new(Arc::new(SourceFile::new_anon(source)))
     }
 
     pub fn to_tokens(mut self) -> Result<Vec<Token>, LexerError> {
@@ -134,18 +136,24 @@ impl<'src> Lexer<'src> {
     }
 
     fn peek(&self) -> Option<char> {
-        self.chars.clone().next()
+        self.source.content[self.position..].chars().next()
     }
 
     fn peek2(&self) -> Option<char> {
-        let mut c = self.chars.clone();
+        let c = &mut self.source.content[self.position..].chars();
         c.next();
         c.next()
     }
 
     fn advance(&mut self) -> Option<char> {
-        self.index += 1;
-        self.chars.next()
+        let remaining = &self.source.content[self.position..];
+        if let Some(ch) = remaining.chars().next() {
+            self.position += ch.len_utf8();
+            self.index += 1;
+            Some(ch)
+        } else {
+            None
+        }
     }
 
     fn match_char(&mut self, ch: char) -> bool {
@@ -170,7 +178,7 @@ impl<'src> Lexer<'src> {
     }
 
     fn current_lexeme(&self) -> &str {
-        &self.src[self.start..self.index]
+        &self.source.content[self.start..self.index]
     }
 
     fn create_span(&mut self) -> Span {
@@ -279,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let lexer = Lexer::new("");
+        let lexer = Lexer::new_from_str("");
         let tokens = lexer.to_tokens();
         assert!(tokens.is_ok());
         assert_eq!(tokens.unwrap().len(), 0);
@@ -287,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_symbols() {
-        let lexer = Lexer::new("(){};+-*/~%");
+        let lexer = Lexer::new_from_str("(){};+-*/~%");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 11); // Updated to match actual count
@@ -306,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_minus_minus() {
-        let lexer = Lexer::new("--");
+        let lexer = Lexer::new_from_str("--");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 1);
@@ -315,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_keywords() {
-        let lexer = Lexer::new("int void return");
+        let lexer = Lexer::new_from_str("int void return");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 3);
@@ -326,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_identifiers() {
-        let lexer = Lexer::new("foo bar baz123 _underscore under_score");
+        let lexer = Lexer::new_from_str("foo bar baz123 _underscore under_score");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 5);
@@ -339,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_numbers() {
-        let lexer = Lexer::new("0 123 456789");
+        let lexer = Lexer::new_from_str("0 123 456789");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 3);
@@ -356,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_skip_whitespace() {
-        let lexer = Lexer::new("  \t\n  123  \r\n  abc  ");
+        let lexer = Lexer::new_from_str("  \t\n  123  \r\n  abc  ");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 2);
@@ -366,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_skip_line_comments() {
-        let lexer = Lexer::new("123 // This is a comment\nabc");
+        let lexer = Lexer::new_from_str("123 // This is a comment\nabc");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 2);
@@ -376,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_skip_block_comments() {
-        let lexer = Lexer::new("123 /* This is a\nblock comment */ abc");
+        let lexer = Lexer::new_from_str("123 /* This is a\nblock comment */ abc");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 2);
@@ -386,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_nested_block_comments() {
-        let lexer = Lexer::new("123 /* outer /* inner */ comment */ abc");
+        let lexer = Lexer::new_from_str("123 /* outer /* inner */ comment */ abc");
         let tokens = lexer.to_tokens().unwrap();
 
         // Note: The lexer doesn't support nested block comments properly
@@ -401,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_complex_expression() {
-        let lexer = Lexer::new("int main() { return 42; }");
+        let lexer = Lexer::new_from_str("int main() { return 42; }");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 9); // Updated to match actual count
@@ -418,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_unexpected_token() {
-        let mut lexer = Lexer::new("@");
+        let mut lexer = Lexer::new_from_str("@");
         let token = lexer.next_token();
 
         assert!(token.is_err());
@@ -427,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_eof() {
-        let mut lexer = Lexer::new("");
+        let mut lexer = Lexer::new_from_str("");
         let token = lexer.next_token();
 
         assert!(token.is_err());
@@ -436,7 +444,7 @@ mod tests {
 
     #[test]
     fn test_spans() {
-        let lexer = Lexer::new("abc 123");
+        let lexer = Lexer::new_from_str("abc 123");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 2);
@@ -448,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_comparison_operators_and_bang() {
-        let lexer = Lexer::new("== != < > <= >= !");
+        let lexer = Lexer::new_from_str("== != < > <= >= !");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 7);
@@ -467,7 +475,7 @@ mod tests {
     #[test]
     fn test_comparison_operators_in_expressions() {
         let lexer =
-            Lexer::new("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
+            Lexer::new_from_str("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
         let tokens = lexer.to_tokens().unwrap();
 
         // Verify key tokens in the expression
@@ -512,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_equal_vs_equal_equal_and_bang_vs_bang_equal() {
-        let lexer = Lexer::new("a = b == c; x = !y; z != w;");
+        let lexer = Lexer::new_from_str("a = b == c; x = !y; z != w;");
         let tokens = lexer.to_tokens().unwrap();
 
         assert_eq!(tokens.len(), 15);

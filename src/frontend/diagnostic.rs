@@ -1,6 +1,6 @@
+use colored::*;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
-use colored::*;
 
 use crate::frontend::source::SourceFile;
 use crate::frontend::span::Span;
@@ -64,11 +64,7 @@ impl Diagnostic {
 
     /// Formats the diagnostic message with source code context and highlighting.
     pub fn format(&self) -> String {
-        let src = match &self.source_file.src {
-            Some(src) => src,
-            None => return format!("{}: {}", self.level, self.message),
-        };
-
+        let src = &self.source_file.content;
         let mut result = String::new();
 
         // Add the error message header
@@ -79,9 +75,7 @@ impl Diagnostic {
 
         // Add the file and location information
         let file_name = match &self.source_file.name {
-            crate::frontend::source::FileName::Real(path) => {
-                path.to_string_lossy().to_string()
-            }
+            crate::frontend::source::FileName::Real(path) => path.to_string_lossy().to_string(),
             crate::frontend::source::FileName::Anon(id) => format!("<anonymous-{}>", id),
         };
         result.push_str(&format!(
@@ -95,8 +89,9 @@ impl Diagnostic {
         // Add the previous line if it exists
         if line_number > 1 {
             let prev_line = self.get_line(src, line_number - 1);
-            result.push_str(&format!("{:4} {} {}\n", 
-                (line_number - 1).to_string().cyan(), 
+            result.push_str(&format!(
+                "{:4} {} {}\n",
+                (line_number - 1).to_string().cyan(),
                 "|".cyan().bold(),
                 prev_line
             ));
@@ -104,8 +99,9 @@ impl Diagnostic {
 
         // Add the source line
         let line = self.get_line(src, line_number);
-        result.push_str(&format!("{:4} {} {}\n", 
-            line_number.to_string().cyan(), 
+        result.push_str(&format!(
+            "{:4} {} {}\n",
+            line_number.to_string().cyan(),
             "|".cyan().bold(),
             line
         ));
@@ -127,8 +123,9 @@ impl Diagnostic {
         // Add the next line if it exists
         let next_line = self.get_line(src, line_number + 1);
         if !next_line.is_empty() {
-            result.push_str(&format!("{:4} {} {}\n", 
-                (line_number + 1).to_string().cyan(), 
+            result.push_str(&format!(
+                "{:4} {} {}\n",
+                (line_number + 1).to_string().cyan(),
                 "|".cyan().bold(),
                 next_line
             ));

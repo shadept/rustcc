@@ -2,7 +2,6 @@ use crate::frontend::ast::{
     BinaryOp, BlockItem, Decl, DeclKind, Expr, ExprKind, Function, Program, Stmt, StmtKind, UnaryOp,
 };
 use crate::frontend::diagnostic::Diagnostic;
-use crate::frontend::parser::ParserError::UnexpectedToken;
 use crate::frontend::source::SourceFile;
 use crate::frontend::span::Span;
 use crate::frontend::token::{Keyword, Symbol, Token, TokenKind};
@@ -10,38 +9,6 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::vec::IntoIter;
-
-macro_rules! match_keyword {
-    ($self:ident, $keyword:expr $(, $keywords:expr)*) => {
-        if let Some(tok) = $self.peek() {
-            match tok.kind {
-                TokenKind::Keyword(s) if s == $keyword $(|| s == $keywords)* => {
-                    $self.advance();
-                    Some((s, tok.span))
-                },
-                _ => None,
-            }
-        } else {
-            None
-        }
-    };
-}
-
-macro_rules! match_symbol {
-    ($self:ident, $symbol:expr $(, $symbols:expr)*) => {
-        if let Some(tok) = $self.peek() {
-            match tok.kind {
-                TokenKind::Symbol(s) if s == $symbol $(|| s == $symbols)* => {
-                    $self.advance();
-                    Some((s, tok.span))
-                },
-                _ => None,
-            }
-        } else {
-            None
-        }
-    };
-}
 
 #[derive(Debug)]
 pub struct Parser {
@@ -80,7 +47,7 @@ impl Parser {
     fn parse_block(&mut self) -> Result<Vec<BlockItem>, ParserError> {
         self.expect_symbol(Symbol::OpenBrace)?;
         let mut items = vec![];
-        while match_symbol!(self, Symbol::CloseBrace).is_none() {
+        while self.match_symbol(Symbol::CloseBrace).is_none() {
             if let Some(tok) = self.peek() {
                 if tok.kind == TokenKind::Keyword(Keyword::Int) {
                     let decl = self.parse_declaration()?;
@@ -95,32 +62,32 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<Decl, ParserError> {
-        if let Some((_, span)) = match_keyword!(self, Keyword::Int) {
+        if let Some(tok) = self.match_keyword(Keyword::Int) {
             let identifier = self.expect_identifier()?;
-            let init = if match_symbol!(self, Symbol::Equal).is_some() {
+            let init = if self.match_symbol(Symbol::Equal).is_some() {
                 Some(self.parse_expression(0)?)
             } else {
                 None
             };
             self.expect_symbol(Symbol::Semicolon)?;
-            return Ok(Decl::new(DeclKind::Variable(identifier, init), span));
+            return Ok(Decl::new(DeclKind::Variable(identifier, init), tok.span));
         }
-        Err(UnexpectedToken(self.peek().unwrap()))
+        Err(ParserError::UnexpectedToken(self.peek().unwrap()))
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
-        if let Some((_, span)) = match_symbol!(self, Symbol::Semicolon) {
-            return Ok(Stmt::new(StmtKind::Null, span));
+        if let Some(tok) = self.match_symbol(Symbol::Semicolon) {
+            return Ok(Stmt::new(StmtKind::Null, tok.span));
         }
 
         let ret: Result<Stmt, ParserError>;
-        if let Some((_, span)) = match_keyword!(self, Keyword::Return) {
+        if let Some(tok) = self.match_keyword(Keyword::Return) {
             let expr1 = self.parse_expression(0)?;
             let span1 = expr1.span;
             let expr = Expr::new(ExprKind::Return(Some(Box::from(expr1))), span1);
-            ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), span));
-        } else if let Some((_, span)) = match_keyword!(self, Keyword::If) {
-            return self.parse_if_stmt(span);
+            ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), tok.span));
+        } else if let Some(tok) = self.match_keyword(Keyword::If) {
+            return self.parse_if_stmt(tok.span);
         } else {
             let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
@@ -133,17 +100,29 @@ impl Parser {
     fn parse_if_stmt(&mut self, if_span: Span) -> Result<Stmt, ParserError> {
         // let if_tok = self.expect_keyword(Keyword::If)?;
         self.expect_symbol(Symbol::OpenParen)?;
-        let cond = self.parse_expression(0)?;
+        let condition = self.parse_expression(0)?;
         self.expect_symbol(Symbol::CloseParen)?;
+
         let then_stmt = self.parse_statement()?;
-        let else_stmt = if match_keyword!(self, Keyword::Else).is_some() {
+
+        let else_stmt = if self.match_keyword(Keyword::Else).is_some() {
             Some(self.parse_statement()?)
         } else {
             None
         };
-        let span = if_span + else_stmt.clone().unwrap_or_else(|| then_stmt.clone()).span;
+
+        let end_span = else_stmt
+            .as_ref()
+            .map(|stmt| stmt.span)
+            .unwrap_or(then_stmt.span);
+        let span = if_span + end_span;
+
         Ok(Stmt::new(
-            StmtKind::If(cond.into(), then_stmt.into(), else_stmt.map(|f| f.into())),
+            StmtKind::If(
+                condition.into(),
+                then_stmt.into(),
+                else_stmt.map(|f| f.into()),
+            ),
             span,
         ))
     }
@@ -221,7 +200,7 @@ impl Parser {
                 self.expect_symbol(Symbol::CloseParen)?;
                 Ok(expr)
             }
-            _ => Err(UnexpectedToken(token)),
+            _ => Err(ParserError::UnexpectedToken(token)),
         }
     }
 
@@ -232,7 +211,7 @@ impl Parser {
                     self.advance().unwrap();
                     Ok(Expr::new(ExprKind::Var(ident), tok.span))
                 }
-                _ => Err(UnexpectedToken(tok)),
+                _ => Err(ParserError::UnexpectedToken(tok)),
             };
         }
         Err(ParserError::EOT)
@@ -320,36 +299,50 @@ impl Parser {
     }
 
     fn expect_identifier(&mut self) -> Result<String, ParserError> {
-        if let Some(tok) = self.peek() {
-            return match tok.kind {
-                TokenKind::Identifier(ident) => {
-                    self.advance().unwrap();
-                    Ok(ident)
-                }
-                _ => Err(UnexpectedToken(tok)),
-            };
+        let token = self.peek().ok_or(ParserError::EOT)?;
+        match token.kind {
+            TokenKind::Identifier(ident) => {
+                self.advance().unwrap();
+                Ok(ident)
+            }
+            _ => Err(ParserError::UnexpectedToken(token)),
         }
-        Err(ParserError::EOT)
     }
 
     fn expect_keyword(&mut self, keyword: Keyword) -> Result<Token, ParserError> {
-        if let Some(tok) = self.peek() {
-            if matches!(&tok.kind, TokenKind::Keyword(kw) if *kw == keyword) {
-                return Ok(self.advance().unwrap());
-            }
-            return Err(UnexpectedToken(tok));
+        let token = self.peek().ok_or(ParserError::EOT)?;
+        if matches!(&token.kind, TokenKind::Keyword(kw) if *kw == keyword) {
+            Ok(self.advance().unwrap())
+        } else {
+            Err(ParserError::UnexpectedToken(token))
         }
-        Err(ParserError::EOT)
     }
 
     fn expect_symbol(&mut self, symbol: Symbol) -> Result<Token, ParserError> {
-        if let Some(tok) = self.peek() {
-            if matches!(&tok.kind, TokenKind::Symbol(sym) if *sym == symbol) {
-                return Ok(self.advance().unwrap());
-            }
-            return Err(UnexpectedToken(tok));
+        let token = self.peek().ok_or(ParserError::EOT)?;
+        if matches!(&token.kind, TokenKind::Symbol(sym) if *sym == symbol) {
+            Ok(self.advance().unwrap())
+        } else {
+            Err(ParserError::UnexpectedToken(token))
         }
-        Err(ParserError::EOT)
+    }
+
+    fn match_keyword(&mut self, keyword: Keyword) -> Option<Token> {
+        let token = self.peek()?;
+        if matches!(&token.kind, TokenKind::Keyword(kw) if *kw == keyword) {
+            Some(self.advance().unwrap())
+        } else {
+            None
+        }
+    }
+
+    fn match_symbol(&mut self, symbol: Symbol) -> Option<Token> {
+        let token = self.peek()?;
+        if matches!(&token.kind, TokenKind::Symbol(sym) if *sym == symbol) {
+            Some(self.advance().unwrap())
+        } else {
+            None
+        }
     }
 
     /// Reports an error with a diagnostic message.
@@ -382,11 +375,8 @@ impl ParserError {
             ),
             ParserError::EOT => {
                 // For EOT, we don't have a span, so we use a default span at the end of the file
-                let span = if let Some(src) = &source_file.src {
-                    Span::new(src.len(), src.len())
-                } else {
-                    Span::default()
-                };
+                let len = source_file.content.len();
+                let span = Span::new(len, len);
                 Diagnostic::error("Unexpected end of tokens".to_string(), source_file, span)
             }
         }
