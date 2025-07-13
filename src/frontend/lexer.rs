@@ -1,6 +1,6 @@
 use crate::frontend::diagnostic::Diagnostic;
 use crate::frontend::source::SourceFile;
-use crate::frontend::span::Span;
+use crate::frontend::source::Span;
 use crate::frontend::token::{Bits, Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -23,7 +23,7 @@ impl Lexer {
             start: 0,
         }
     }
-    
+
     pub fn new_from_str(source: &str) -> Lexer {
         Lexer::new(Arc::new(SourceFile::new_anon(source)))
     }
@@ -182,7 +182,7 @@ impl Lexer {
     }
 
     fn create_span(&mut self) -> Span {
-        Span::new(self.start, self.index)
+        Span::new(self.source.clone(), self.start, self.index)
     }
 
     fn create_token(&mut self, kind: TokenKind) -> Token {
@@ -245,7 +245,7 @@ impl Lexer {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LexerError {
     UnexpectedToken(Span),
     InvalidIdentifier(Span),
@@ -255,17 +255,12 @@ pub enum LexerError {
 impl LexerError {
     /// Creates a diagnostic for this error.
     pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
-        match self {
-            LexerError::UnexpectedToken(span) => {
-                Diagnostic::error("Unexpected token".to_string(), source_file, *span)
-            }
-            LexerError::InvalidIdentifier(span) => {
-                Diagnostic::error("Invalid identifier".to_string(), source_file, *span)
-            }
-            LexerError::EOF(span) => {
-                Diagnostic::error("Unexpected end of file".to_string(), source_file, *span)
-            }
-        }
+        let (msg, span) = match self {
+            LexerError::UnexpectedToken(span) => ("Unexpected token", span),
+            LexerError::InvalidIdentifier(span) => ("Invalid identifier", span),
+            LexerError::EOF(span) => ("Unexpected end of file", span),
+        };
+        Diagnostic::error(msg.into(), span.clone())
     }
 }
 
@@ -474,8 +469,9 @@ mod tests {
 
     #[test]
     fn test_comparison_operators_in_expressions() {
-        let lexer =
-            Lexer::new_from_str("if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }");
+        let lexer = Lexer::new_from_str(
+            "if (a == b && c != d || e < f && g > h || i <= j && k >= l) { !flag; }",
+        );
         let tokens = lexer.to_tokens().unwrap();
 
         // Verify key tokens in the expression

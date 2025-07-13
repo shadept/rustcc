@@ -1,4 +1,4 @@
-﻿use crate::frontend::span::Span;
+﻿use crate::frontend::source::Span;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]

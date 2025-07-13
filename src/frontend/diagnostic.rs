@@ -3,12 +3,11 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use crate::frontend::source::SourceFile;
-use crate::frontend::span::Span;
+use crate::frontend::source::Span;
 
 /// A diagnostic message with source code context and highlighting.
 pub struct Diagnostic {
     pub message: String,
-    pub source_file: Arc<SourceFile>,
     pub span: Span,
     pub level: DiagnosticLevel,
 }
@@ -33,38 +32,33 @@ impl Display for DiagnosticLevel {
 
 impl Diagnostic {
     /// Creates a new diagnostic message.
-    pub fn new(
-        message: String,
-        source_file: Arc<SourceFile>,
-        span: Span,
-        level: DiagnosticLevel,
-    ) -> Self {
+    pub fn new(message: String, span: Span, level: DiagnosticLevel) -> Self {
         Self {
             message,
-            source_file,
             span,
             level,
         }
     }
 
     /// Creates a new error diagnostic.
-    pub fn error(message: String, source_file: Arc<SourceFile>, span: Span) -> Self {
-        Self::new(message, source_file, span, DiagnosticLevel::Error)
+    pub fn error(message: String, span: Span) -> Self {
+        Self::new(message, span, DiagnosticLevel::Error)
     }
 
     /// Creates a new warning diagnostic.
-    pub fn warning(message: String, source_file: Arc<SourceFile>, span: Span) -> Self {
-        Self::new(message, source_file, span, DiagnosticLevel::Warning)
+    pub fn warning(message: String, span: Span) -> Self {
+        Self::new(message, span, DiagnosticLevel::Warning)
     }
 
     /// Creates a new note diagnostic.
-    pub fn note(message: String, source_file: Arc<SourceFile>, span: Span) -> Self {
-        Self::new(message, source_file, span, DiagnosticLevel::Note)
+    pub fn note(message: String, span: Span) -> Self {
+        Self::new(message, span, DiagnosticLevel::Note)
     }
 
     /// Formats the diagnostic message with source code context and highlighting.
     pub fn format(&self) -> String {
-        let src = &self.source_file.content;
+        let file_name = &self.span.source.name;
+        let src = &self.span.source.content;
         let mut result = String::new();
 
         // Add the error message header
@@ -74,7 +68,7 @@ impl Diagnostic {
         let (line_number, column_start, column_end) = self.get_line_and_column(src);
 
         // Add the file and location information
-        let file_name = match &self.source_file.name {
+        let file_name = match file_name {
             crate::frontend::source::FileName::Real(path) => path.to_string_lossy().to_string(),
             crate::frontend::source::FileName::Anon(id) => format!("<anonymous-{}>", id),
         };

@@ -1,5 +1,5 @@
 ﻿use crate::backend::tacky::Identifier;
-use crate::frontend::span::Span;
+use crate::frontend::source::Span;
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,13 +25,11 @@ impl Program {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub body: Option<Block>,
+    pub body: Option<Stmt>,
 }
 
-pub type Block = Vec<BlockItem>;
-
 impl Function {
-    pub fn new(name: String, body: Block) -> Self {
+    pub fn new(name: String, body: Stmt) -> Self {
         Self {
             name,
             body: Some(body),
@@ -64,6 +62,7 @@ impl Decl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
+    Compound(Vec<BlockItem>),
     Expr(Box<Expr>),
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Null,

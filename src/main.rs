@@ -167,6 +167,9 @@ fn run_lexer(
         buffer.drain(..=buffer.find('\n').unwrap_or(buffer.len()));
     }
 
+    // preemptively remove whitespace at end
+    buffer.truncate(buffer.trim_end().len());
+
     // Close the file
     drop(file);
 
@@ -195,7 +198,7 @@ fn run_parser(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Program {
         Ok(program) => program,
         Err(err) => {
             // Report the error with diagnostics
-            let diagnostic = err.diagnostic(source_file);
+            let diagnostic = err.diagnostic();
             eprintln!("{}", diagnostic);
             exit(1);
         }
@@ -207,7 +210,7 @@ fn run_validate(program: Program, source_file: Arc<SourceFile>) -> Program {
         Ok(validated_program) => validated_program,
         Err(err) => {
             // Report the error with diagnostics
-            let diagnostic = err.diagnostic(source_file);
+            let diagnostic = err.diagnostic();
             eprintln!("{}", diagnostic);
             exit(1);
         }

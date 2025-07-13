@@ -3,7 +3,7 @@ use crate::frontend::ast::{
 };
 use crate::frontend::diagnostic::Diagnostic;
 use crate::frontend::source::SourceFile;
-use crate::frontend::span::Span;
+use crate::frontend::source::Span;
 use crate::frontend::token::{Keyword, Symbol, Token, TokenKind};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -12,16 +12,16 @@ use std::vec::IntoIter;
 
 #[derive(Debug)]
 pub struct Parser {
+    source: Arc<SourceFile>,
     tokens: IntoIter<Token>,
-    source_file: Arc<SourceFile>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>, source_file: Arc<SourceFile>) -> Self {
         let iter = tokens.into_iter();
         Parser {
+            source: source_file,
             tokens: iter,
-            source_file,
         }
     }
 
@@ -44,10 +44,17 @@ impl Parser {
         Ok(Function::new(name, body))
     }
 
-    fn parse_block(&mut self) -> Result<Vec<BlockItem>, ParserError> {
-        self.expect_symbol(Symbol::OpenBrace)?;
+    fn parse_block(&mut self) -> Result<Stmt, ParserError> {
+        let open_brace = self.expect_symbol(Symbol::OpenBrace)?;
         let mut items = vec![];
-        while self.match_symbol(Symbol::CloseBrace).is_none() {
+        let mut close_brace = None;
+
+        loop {
+            if let Some(token) = self.match_symbol(Symbol::CloseBrace) {
+                close_brace = Some(token);
+                break;
+            }
+
             if let Some(tok) = self.peek() {
                 if tok.kind == TokenKind::Keyword(Keyword::Int) {
                     let decl = self.parse_declaration()?;
@@ -58,7 +65,9 @@ impl Parser {
             let stmt = self.parse_statement()?;
             items.push(BlockItem::Stmt(stmt));
         }
-        Ok(items)
+
+        let span = open_brace.span + close_brace.unwrap().span;
+        Ok(Stmt::new(StmtKind::Compound(items), span))
     }
 
     fn parse_declaration(&mut self) -> Result<Decl, ParserError> {
@@ -82,12 +91,15 @@ impl Parser {
 
         let ret: Result<Stmt, ParserError>;
         if let Some(tok) = self.match_keyword(Keyword::Return) {
-            let expr1 = self.parse_expression(0)?;
-            let span1 = expr1.span;
-            let expr = Expr::new(ExprKind::Return(Some(Box::from(expr1))), span1);
+            let expr = self.parse_expression(0)?;
+            let span = expr.span.clone();
+            let expr = Expr::new(ExprKind::Return(Some(Box::from(expr))), span);
             ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), tok.span));
         } else if let Some(tok) = self.match_keyword(Keyword::If) {
             return self.parse_if_stmt(tok.span);
+        } else if matches!(self.peek(), Some(tok) if tok.kind == TokenKind::Symbol(Symbol::OpenBrace))
+        {
+            return self.parse_block();
         } else {
             let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
@@ -113,8 +125,8 @@ impl Parser {
 
         let end_span = else_stmt
             .as_ref()
-            .map(|stmt| stmt.span)
-            .unwrap_or(then_stmt.span);
+            .map(|stmt| stmt.span.clone())
+            .unwrap_or_else(|| then_stmt.span.clone());
         let span = if_span + end_span;
 
         Ok(Stmt::new(
@@ -147,12 +159,12 @@ impl Parser {
                 self.advance().unwrap();
                 left = if token.kind == TokenKind::Symbol(Symbol::Equal) {
                     let right = self.parse_expression(precedence)?;
-                    let span = left.span + token.span + right.span;
+                    let span = left.span.clone() + token.span.clone() + right.span.clone();
                     Expr::new(ExprKind::Assignment(left.into(), right.into()), span)
                 } else if token.kind == TokenKind::Symbol(Symbol::Question) {
                     let middle = self.parse_conditional_middle()?;
                     let right = self.parse_expression(precedence)?;
-                    let span = left.span + right.span;
+                    let span = left.span.clone() + right.span.clone();
                     Expr::new(
                         ExprKind::Cond(left.into(), middle.into(), right.into()),
                         span,
@@ -160,7 +172,7 @@ impl Parser {
                 } else {
                     let op = self.parse_binary_op(&token).unwrap();
                     let right = self.parse_expression(precedence + 1)?;
-                    let span = left.span + token.span + right.span;
+                    let span = left.span.clone() + token.span.clone() + right.span.clone();
                     Expr::new(ExprKind::Binary(op, left.into(), right.into()), span)
                 }
             } else {
@@ -178,11 +190,11 @@ impl Parser {
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
-        let token = self.peek().ok_or(ParserError::EOT)?;
+        let token = self.peek().ok_or_else(|| self.eof())?;
         if let Some(op) = self.parse_unary_op(&token) {
             let token = self.advance().unwrap();
             let expr = self.parse_factor()?;
-            let span = expr.span + token.span;
+            let span = expr.span.clone() + token.span;
             return Ok(Expr::new(ExprKind::Unary(op, expr.into()), span));
         }
         match token.kind {
@@ -214,7 +226,7 @@ impl Parser {
                 _ => Err(ParserError::UnexpectedToken(tok)),
             };
         }
-        Err(ParserError::EOT)
+        Err(self.eof())
     }
 
     fn parse_unary_op(&self, token: &Token) -> Option<UnaryOp> {
@@ -299,7 +311,7 @@ impl Parser {
     }
 
     fn expect_identifier(&mut self) -> Result<String, ParserError> {
-        let token = self.peek().ok_or(ParserError::EOT)?;
+        let token = self.peek().ok_or_else(|| self.eof())?;
         match token.kind {
             TokenKind::Identifier(ident) => {
                 self.advance().unwrap();
@@ -310,7 +322,7 @@ impl Parser {
     }
 
     fn expect_keyword(&mut self, keyword: Keyword) -> Result<Token, ParserError> {
-        let token = self.peek().ok_or(ParserError::EOT)?;
+        let token = self.peek().ok_or_else(|| self.eof())?;
         if matches!(&token.kind, TokenKind::Keyword(kw) if *kw == keyword) {
             Ok(self.advance().unwrap())
         } else {
@@ -319,7 +331,7 @@ impl Parser {
     }
 
     fn expect_symbol(&mut self, symbol: Symbol) -> Result<Token, ParserError> {
-        let token = self.peek().ok_or(ParserError::EOT)?;
+        let token = self.peek().ok_or_else(|| self.eof())?;
         if matches!(&token.kind, TokenKind::Symbol(sym) if *sym == symbol) {
             Ok(self.advance().unwrap())
         } else {
@@ -345,10 +357,10 @@ impl Parser {
         }
     }
 
-    /// Reports an error with a diagnostic message.
-    pub fn report_error(&self, error: &ParserError) {
-        let diagnostic = error.diagnostic(Arc::clone(&self.source_file));
-        eprintln!("{}", diagnostic);
+    fn eof(&self) -> ParserError {
+        let len = self.source.content.len();
+        let span = Span::new(self.source.clone(), len, len);
+        ParserError::EOF(span)
     }
 }
 
@@ -356,30 +368,25 @@ impl Parser {
 pub enum ParserError {
     UnexpectedToken(Token),
     UnconsumedToken(Token),
-    EOT, // end-of-tokens
+    EOF(Span),
 }
 
 impl ParserError {
     /// Creates a diagnostic for this error.
-    pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
-        match self {
-            ParserError::UnexpectedToken(token) => Diagnostic::error(
+    pub fn diagnostic(&self) -> Diagnostic {
+        let (msg, span) = match self {
+            ParserError::UnexpectedToken(token) => (
                 format!("Unexpected token `{}`", token.kind),
-                source_file,
-                token.span,
+                token.span.clone(),
             ),
-            ParserError::UnconsumedToken(token) => Diagnostic::error(
+            ParserError::UnconsumedToken(token) => (
                 format!("Unconsumed token in stream `{}`", token.kind),
-                source_file,
-                token.span,
+                token.span.clone(),
             ),
-            ParserError::EOT => {
-                // For EOT, we don't have a span, so we use a default span at the end of the file
-                let len = source_file.content.len();
-                let span = Span::new(len, len);
-                Diagnostic::error("Unexpected end of tokens".to_string(), source_file, span)
-            }
-        }
+            ParserError::EOF(span) => ("Unexpected end of file".to_string(), span.clone()),
+        };
+
+        Diagnostic::error(msg.to_string(), span)
     }
 }
 
@@ -390,7 +397,7 @@ impl Display for ParserError {
             ParserError::UnconsumedToken(token) => {
                 write!(f, "Unconsumed token in stream `{}`", token.kind)
             }
-            ParserError::EOT => write!(f, "End of tokens"),
+            ParserError::EOF(span) => write!(f, "End of tokens"),
         }
     }
 }

@@ -1,16 +1,13 @@
 ﻿use crate::backend::common::make_unique;
+use crate::backend::symbols::{MapEntry, VariableMap};
 use crate::backend::tacky::Identifier;
 use crate::frontend::ast::{
     BlockItem, Decl, DeclKind, Expr, ExprKind, Function, Program, Stmt, StmtKind,
 };
 use crate::frontend::diagnostic::Diagnostic;
-use crate::frontend::parser::ParserError;
 use crate::frontend::source::SourceFile;
-use crate::frontend::span::Span;
-use std::collections::HashMap;
+use crate::frontend::source::Span;
 use std::sync::Arc;
-
-type VariableMap = HashMap<Identifier, Identifier>;
 
 pub fn resolve_program(program: Program) -> Result<Program, SemanticError> {
     let mut map = VariableMap::new();
@@ -20,16 +17,16 @@ pub fn resolve_program(program: Program) -> Result<Program, SemanticError> {
 
 fn resolve_function(func: Function, map: &mut VariableMap) -> Result<Function, SemanticError> {
     if let Some(items) = func.body {
-        let mut body = Vec::new();
-        for item in items {
-            match item {
-                BlockItem::Decl(decl) => body.push(BlockItem::Decl(resolve_decl(decl, map)?)),
-                BlockItem::Stmt(stmt) => body.push(BlockItem::Stmt(resolve_stmt(stmt, map)?)),
-            }
-        }
-        Ok(Function::new(func.name, body))
+        Ok(Function::new(func.name, resolve_stmt(items, map)?))
     } else {
         Ok(func)
+    }
+}
+
+fn resolve_block_item(item: BlockItem, map: &mut VariableMap) -> Result<BlockItem, SemanticError> {
+    match item {
+        BlockItem::Decl(decl) => Ok(BlockItem::Decl(resolve_decl(decl, map)?)),
+        BlockItem::Stmt(stmt) => Ok(BlockItem::Stmt(resolve_stmt(stmt, map)?)),
     }
 }
 
@@ -45,11 +42,11 @@ fn resolve_variable_decl(
     span: Span,
     map: &mut VariableMap,
 ) -> Result<Decl, SemanticError> {
-    if map.contains_key(&name) {
+    if map.contains_key(&name) && map[&name].from_current_block {
         return Err(SemanticError::DuplicatedVariableDeclaration(name, span));
     }
     let unique_name = make_unique(&name);
-    map.insert(name, unique_name.clone());
+    map.insert(name, MapEntry::new(unique_name.clone()));
     if let Some(init) = init {
         let init = resolve_expr(&init, map)?;
         return Ok(Decl::new(DeclKind::Variable(unique_name, Some(init)), span));
@@ -57,8 +54,23 @@ fn resolve_variable_decl(
     Ok(Decl::new(DeclKind::Variable(unique_name, None), span))
 }
 
+fn resolve_block(
+    block: Vec<BlockItem>,
+    map: &mut VariableMap,
+) -> Result<Vec<BlockItem>, SemanticError> {
+    let mut new_block = Vec::new();
+    for item in block {
+        new_block.push(resolve_block_item(item, map)?);
+    }
+    Ok(new_block)
+}
+
 fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError> {
     match stmt.kind {
+        StmtKind::Compound(block) => {
+            let mut new_map = map.clone(); // sets from_current_block to false
+            Ok(StmtKind::Compound(resolve_block(block, &mut new_map)?).into_stmt(stmt.span))
+        }
         StmtKind::Expr(expr) => {
             Ok(StmtKind::Expr(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
@@ -88,7 +100,7 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
                 let right = resolve_expr(&right, map)?;
                 Ok(Expr::new(
                     ExprKind::Assignment(left.into(), right.into()),
-                    expr.span,
+                    expr.span.clone(),
                 ))
             }
         }
@@ -98,7 +110,7 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
                 resolve_expr(&left, map)?.into(),
                 resolve_expr(&right, map)?.into(),
             ),
-            expr.span,
+            expr.span.clone(),
         )),
         ExprKind::Cond(cond, if_true, if_false) => Ok(Expr::new(
             ExprKind::Cond(
@@ -106,25 +118,32 @@ fn resolve_expr(expr: &Expr, map: &mut VariableMap) -> Result<Expr, SemanticErro
                 resolve_expr(&if_true, map)?.into(),
                 resolve_expr(&if_false, map)?.into(),
             ),
-            expr.span,
+            expr.span.clone(),
         )),
-        ExprKind::Constant(literal) => {
-            Ok(Expr::new(ExprKind::Constant(literal.clone()), expr.span))
-        }
+        ExprKind::Constant(literal) => Ok(Expr::new(
+            ExprKind::Constant(literal.clone()),
+            expr.span.clone(),
+        )),
         ExprKind::Return(Some(e)) => Ok(Expr::new(
             ExprKind::Return(Some(resolve_expr(&*e, map)?.into())),
-            expr.span,
+            expr.span.clone(),
         )),
-        ExprKind::Return(None) => Ok(Expr::new(ExprKind::Return(None), expr.span)),
+        ExprKind::Return(None) => Ok(Expr::new(ExprKind::Return(None), expr.span.clone())),
         ExprKind::Unary(op, expr) => Ok(Expr::new(
             ExprKind::Unary(op.clone(), resolve_expr(&expr, map)?.into()),
-            expr.span,
+            expr.span.clone(),
         )),
         ExprKind::Var(name) => {
             if map.contains_key(name) {
-                Ok(Expr::new(ExprKind::Var(map[name].clone()), expr.span))
+                Ok(Expr::new(
+                    ExprKind::Var(map[name].name.clone()),
+                    expr.span.clone(),
+                ))
             } else {
-                Err(SemanticError::UndeclaredVariable(name.clone(), expr.span))
+                Err(SemanticError::UndeclaredVariable(
+                    name.clone(),
+                    expr.span.clone(),
+                ))
             }
         }
     }
@@ -138,16 +157,16 @@ pub enum SemanticError {
 }
 
 impl SemanticError {
-    pub fn diagnostic(&self, source_file: Arc<SourceFile>) -> Diagnostic {
+    pub fn diagnostic(&self) -> Diagnostic {
         match self {
             SemanticError::DuplicatedVariableDeclaration(name, span) => {
-                Diagnostic::error(self.to_string(), source_file, *span)
+                Diagnostic::error(self.to_string(), span.clone())
             }
             SemanticError::InvalidLValue(token) => {
-                Diagnostic::error(self.to_string(), source_file, token.span)
+                Diagnostic::error(self.to_string(), token.span.clone())
             }
             SemanticError::UndeclaredVariable(name, span) => {
-                Diagnostic::error(self.to_string(), source_file, *span)
+                Diagnostic::error(self.to_string(), span.clone())
             }
         }
     }

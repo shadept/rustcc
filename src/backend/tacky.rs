@@ -113,26 +113,30 @@ pub fn emit_tacky(program: ast::Program) -> Program {
 fn emit_tacky_function(function: ast::Function) -> Function {
     let mut instructions = Vec::new();
     if let Some(body) = function.body {
-        for item in body {
-            match item {
-                BlockItem::Decl(decl) => emit_tacky_decl(decl, &mut instructions),
-                BlockItem::Stmt(stmt) => emit_tacky_stmt(stmt, &mut instructions),
-            }
-        }
+        emit_tacky_stmt(body, &mut instructions);
     }
     instructions.push(Instruction::Return(Val::Constant(0))); // optimization will remove extra return if another return is present
     Function::new(function.name, instructions)
 }
+
+fn emit_tacky_block_item(item: ast::BlockItem, instructions: &mut Vec<Instruction>) {
+    match item {
+        BlockItem::Decl(decl) => emit_tacky_decl(decl, instructions),
+        BlockItem::Stmt(stmt) => emit_tacky_stmt(stmt, instructions),
+    }
+}
+
 fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
     match decl.kind {
         DeclKind::Variable(name, init) => {
             if let Some(init) = init {
+                let span = decl.span.clone();
                 let tmp_expr = Expr::new(
                     ExprKind::Assignment(
-                        Expr::new(ExprKind::Var(name), decl.span).into(), // TODO decl.span should be the span of the variable name
+                        Expr::new(ExprKind::Var(name), span.clone()).into(), // TODO decl.span should be the span of the variable name
                         init.into(),
                     ),
-                    decl.span,
+                    span,
                 );
                 emit_tacky_expr(tmp_expr, instructions);
             }
@@ -142,6 +146,11 @@ fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
 
 fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
     match stmt.kind {
+        StmtKind::Compound(block) => {
+            for item in block {
+                emit_tacky_block_item(item, instructions);
+            }
+        }
         StmtKind::Expr(expr) => {
             emit_tacky_expr(*expr, instructions);
         }

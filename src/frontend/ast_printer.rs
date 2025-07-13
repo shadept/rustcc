@@ -32,9 +32,7 @@ impl<W: Write> AstPrinter<W> {
             self.print_indent()?;
             writeln!(self.writer, "Body:")?;
             self.indent += 2;
-            for item in body {
-                self.print_block_item(item)?;
-            }
+            self.print_stmt(body)?;
             self.indent -= 4;
         }
 
@@ -78,6 +76,14 @@ impl<W: Write> AstPrinter<W> {
     fn print_stmt(&mut self, stmt: &Stmt) -> io::Result<()> {
         self.print_indent()?;
         match &stmt.kind {
+            StmtKind::Compound(block) => {
+                writeln!(self.writer, "Statement: Compound")?;
+                self.indent += 2;
+                for item in block {
+                    self.print_block_item(item)?;
+                }
+                self.indent -= 2;
+            }
             StmtKind::Expr(expr) => {
                 writeln!(self.writer, "Statement: Expression")?;
                 self.indent += 2;
