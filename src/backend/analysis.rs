@@ -5,9 +5,7 @@ use crate::frontend::ast::{
     BlockItem, Decl, DeclKind, Expr, ExprKind, Function, Program, Stmt, StmtKind,
 };
 use crate::frontend::diagnostic::Diagnostic;
-use crate::frontend::source::SourceFile;
 use crate::frontend::source::Span;
-use std::sync::Arc;
 
 pub fn resolve_program(program: Program) -> Result<Program, SemanticError> {
     let mut map = VariableMap::new();
@@ -67,13 +65,17 @@ fn resolve_block(
 
 fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError> {
     match stmt.kind {
+        StmtKind::Break(_) => Ok(stmt),
+        StmtKind::Continue(_) => Ok(stmt),
         StmtKind::Compound(block) => {
             let mut new_map = map.clone(); // sets from_current_block to false
             Ok(StmtKind::Compound(resolve_block(block, &mut new_map)?).into_stmt(stmt.span))
         }
+        StmtKind::DoWhile(_, _, _) => Ok(stmt),
         StmtKind::Expr(expr) => {
             Ok(StmtKind::Expr(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
+        StmtKind::For(_, _, _, _, _) => Ok(stmt),
         StmtKind::If(cond, if_true, if_false) => Ok(StmtKind::If(
             resolve_expr(&cond, map)?.into(),
             resolve_stmt(*if_true, map)?.into(),
@@ -87,6 +89,7 @@ fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError
         StmtKind::Return(expr) => {
             Ok(StmtKind::Return(resolve_expr(&expr, map)?.into()).into_stmt(stmt.span))
         }
+        StmtKind::While(_, _, _) => Ok(stmt),
     }
 }
 

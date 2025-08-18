@@ -62,11 +62,16 @@ impl Decl {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
+    Break(Identifier),
+    Continue(Identifier),
     Compound(Vec<BlockItem>),
+    DoWhile(Box<Stmt>, Box<Expr>, Identifier),
     Expr(Box<Expr>),
+    For(ForInit, Option<Box<Expr>>, Option<Box<Expr>>, Box<Stmt>, Identifier), // init, condition, post, body
     If(Box<Expr>, Box<Stmt>, Option<Box<Stmt>>),
     Null,
     Return(Box<Expr>),
+    While(Box<Expr>, Box<Stmt>, Identifier),
 }
 
 impl StmtKind {
@@ -85,6 +90,12 @@ impl Stmt {
     pub fn new(kind: StmtKind, span: Span) -> Self {
         Self { kind, span }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForInit {
+    Decl(Decl),
+    Expr(Option<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

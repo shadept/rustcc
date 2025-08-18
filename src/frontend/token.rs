@@ -3,11 +3,16 @@ use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Keyword {
+    Break,
+    Continue,
+    Do,
     Else,
+    For,
     If,
     Int,
-    Void,
     Return,
+    Void,
+    While,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -15,11 +20,15 @@ impl TryFrom<&str> for Keyword {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "break" => Ok(Keyword::Break),
+            "continue" => Ok(Keyword::Continue),
+            "do" => Ok(Keyword::Do),
             "else" => Ok(Keyword::Else),
             "if" => Ok(Keyword::If),
             "int" => Ok(Keyword::Int),
-            "void" => Ok(Keyword::Void),
             "return" => Ok(Keyword::Return),
+            "void" => Ok(Keyword::Void),
+            "while" => Ok(Keyword::While),
             _ => Err(()),
         }
     }
@@ -28,11 +37,16 @@ impl TryFrom<&str> for Keyword {
 impl Display for Keyword {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Keyword::Break => write!(f, "break"),
+            Keyword::Continue => write!(f, "continue"),
+            Keyword::Do => write!(f, "do"),
             Keyword::Else => write!(f, "else"),
+            Keyword::For => write!(f, "for"),
             Keyword::If => write!(f, "if"),
             Keyword::Int => write!(f, "int"),
-            Keyword::Void => write!(f, "void"),
             Keyword::Return => write!(f, "return"),
+            Keyword::Void => write!(f, "void"),
+            Keyword::While => write!(f, "while"),
         }
     }
 }

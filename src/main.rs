@@ -95,6 +95,9 @@ fn main() -> Result<(), anyhow::Error> {
     let preprocessed_file = input_file.replace(".c", ".i");
     let (tokens, source_file) = run_lexer(input_file, &preprocessed_file)?;
     if target_stage == CompilationStage::Lex {
+        for token in tokens.iter() {
+            println!("{:?}", token.kind);
+        }
         return Ok(());
     }
 
@@ -150,28 +153,6 @@ fn run_lexer(
     } else {
         preprocessed_file
     };
-    let mut file = File::open(file_path)?;
-
-    // Read file content
-    let file_length = file.metadata()?.len() as usize;
-    let mut buffer = String::with_capacity(file_length);
-    file.read_to_string(&mut buffer)?;
-
-    // Clean up the buffer
-    if buffer.starts_with("\u{FEFF}") {
-        // Skip BOM
-        buffer.drain(.."\u{FEFF}".len());
-    }
-    if buffer.starts_with("#!") {
-        // Skip shebang
-        buffer.drain(..=buffer.find('\n').unwrap_or(buffer.len()));
-    }
-
-    // preemptively remove whitespace at end
-    buffer.truncate(buffer.trim_end().len());
-
-    // Close the file
-    drop(file);
 
     // Keep around until windows msvc is supported
     if !cfg!(windows) && false {
@@ -179,7 +160,8 @@ fn run_lexer(
     }
 
     // Create a SourceFile
-    let source_file = Arc::new(SourceFile::new(PathBuf::from(input_file), buffer));
+    let source_file = SourceFile::new_from_file(PathBuf::from(file_path));
+    let source_file = Arc::new(source_file);
     let lexer = Lexer::new(source_file.clone());
     match lexer.to_tokens() {
         Ok(tokens) => Ok((tokens, source_file)),

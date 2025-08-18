@@ -89,22 +89,67 @@ impl Parser {
             return Ok(Stmt::new(StmtKind::Null, tok.span));
         }
 
-        let ret: Result<Stmt, ParserError>;
-        if let Some(tok) = self.match_keyword(Keyword::Return) {
-            let expr = self.parse_expression(0)?;
-            let span = expr.span.clone();
-            let expr = Expr::new(ExprKind::Return(Some(Box::from(expr))), span);
-            ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), tok.span));
-        } else if let Some(tok) = self.match_keyword(Keyword::If) {
-            return self.parse_if_stmt(tok.span);
-        } else if matches!(self.peek(), Some(tok) if tok.kind == TokenKind::Symbol(Symbol::OpenBrace))
-        {
+        let tok = self.peek_or_eof()?;
+        let mut ret: Result<Stmt, ParserError> = Err(ParserError::UnexpectedToken(tok.clone()));
+        if matches!(self.peek(), Some(tok) if tok.kind == TokenKind::Symbol(Symbol::OpenBrace)) {
             return self.parse_block();
+        } else if let TokenKind::Keyword(kw) = &tok.kind {
+            match kw {
+                Keyword::Break => {
+                    self.advance().unwrap();
+                    ret = Ok(Stmt::new(StmtKind::Break("".to_string()), tok.span));
+                }
+                Keyword::Continue => {
+                    self.advance().unwrap();
+                    ret = Ok(Stmt::new(StmtKind::Continue("".to_string()), tok.span));
+                }
+                Keyword::Do => {
+                    self.advance().unwrap();
+                    let stmt = self.parse_statement()?;
+                    self.expect_keyword(Keyword::While)?;
+                    self.expect_symbol(Symbol::OpenParen)?;
+                    let expr = self.parse_expression(0)?;
+                    self.expect_symbol(Symbol::CloseParen)?;
+                    ret = Ok(Stmt::new(
+                        StmtKind::DoWhile(stmt.into(), expr.into(), "".into()),
+                        tok.span,
+                    ));
+                }
+                Keyword::For => {
+                    self.advance().unwrap();
+                    todo!();
+                }
+                Keyword::If => {
+                    self.advance().unwrap();
+                    return self.parse_if_stmt(tok.span);
+                }
+                Keyword::Return => {
+                    self.advance().unwrap();
+                    let expr = self.parse_expression(0)?;
+                    let span = expr.span.clone();
+                    let expr = Expr::new(ExprKind::Return(Some(Box::from(expr))), span);
+                    ret = Ok(Stmt::new(StmtKind::Return(Box::from(expr)), tok.span));
+                }
+                Keyword::While => {
+                    self.advance().unwrap();
+                    self.expect_keyword(Keyword::While)?;
+                    self.expect_symbol(Symbol::OpenParen)?;
+                    let expr = self.parse_expression(0)?;
+                    self.expect_symbol(Symbol::CloseParen)?;
+                    let stmt = self.parse_statement()?;
+                    return Ok(Stmt::new(
+                        StmtKind::While(expr.into(), stmt.into(), "".into()),
+                        tok.span,
+                    ));
+                }
+                _ => {}
+            }
         } else {
             let expr = self.parse_expression(0)?;
             let span = expr.span.clone();
             ret = Ok(Stmt::new(StmtKind::Expr(Box::new(expr)), span))
         }
+
         self.expect_symbol(Symbol::Semicolon)?;
         ret
     }
@@ -190,7 +235,7 @@ impl Parser {
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
-        let token = self.peek().ok_or_else(|| self.eof())?;
+        let token = self.peek_or_eof()?;
         if let Some(op) = self.parse_unary_op(&token) {
             let token = self.advance().unwrap();
             let expr = self.parse_factor()?;
@@ -300,6 +345,10 @@ impl Parser {
         self.tokens.clone().next()
     }
 
+    fn peek_or_eof(&self) -> Result<Token, ParserError> {
+        self.tokens.clone().next().ok_or_else(|| self.eof())
+    }
+
     fn peek2(&self) -> Option<Token> {
         let mut l = self.tokens.clone();
         l.next();
@@ -311,7 +360,7 @@ impl Parser {
     }
 
     fn expect_identifier(&mut self) -> Result<String, ParserError> {
-        let token = self.peek().ok_or_else(|| self.eof())?;
+        let token = self.peek_or_eof()?;
         match token.kind {
             TokenKind::Identifier(ident) => {
                 self.advance().unwrap();
@@ -322,7 +371,7 @@ impl Parser {
     }
 
     fn expect_keyword(&mut self, keyword: Keyword) -> Result<Token, ParserError> {
-        let token = self.peek().ok_or_else(|| self.eof())?;
+        let token = self.peek_or_eof()?;
         if matches!(&token.kind, TokenKind::Keyword(kw) if *kw == keyword) {
             Ok(self.advance().unwrap())
         } else {
@@ -331,7 +380,7 @@ impl Parser {
     }
 
     fn expect_symbol(&mut self, symbol: Symbol) -> Result<Token, ParserError> {
-        let token = self.peek().ok_or_else(|| self.eof())?;
+        let token = self.peek_or_eof()?;
         if matches!(&token.kind, TokenKind::Symbol(sym) if *sym == symbol) {
             Ok(self.advance().unwrap())
         } else {
