@@ -1,4 +1,4 @@
-﻿use crate::backend::tacky::Identifier;
+use crate::backend::tacky::Identifier;
 use crate::frontend::source::Span;
 use std::io::{self, Write};
 
@@ -87,6 +87,16 @@ pub struct Stmt {
 }
 
 impl Stmt {
+    /// Create a new `Stmt` with the given kind and source span.
+    ///
+    /// This constructs a `Stmt` node for the AST by pairing a `StmtKind` with its `Span`.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let span = /* a Span covering source location */ ;
+    /// let stmt = Stmt::new(StmtKind::Null, span);
+    /// ```
     pub fn new(kind: StmtKind, span: Span) -> Self {
         Self { kind, span }
     }

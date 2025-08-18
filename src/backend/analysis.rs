@@ -1,4 +1,4 @@
-﻿use crate::backend::common::make_unique;
+use crate::backend::common::make_unique;
 use crate::backend::symbols::{MapEntry, VariableMap};
 use crate::backend::tacky::Identifier;
 use crate::frontend::ast::{
@@ -7,6 +7,20 @@ use crate::frontend::ast::{
 use crate::frontend::diagnostic::Diagnostic;
 use crate::frontend::source::Span;
 
+/// Resolve semantic information for a whole program.
+///
+/// Creates a fresh variable map, resolves the program's top-level function (applying unique
+/// renaming, scoping rules, and basic semantic checks), and returns a new `Program` with the
+/// resolved function. If resolution fails, returns a `SemanticError` describing the problem.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Construct a minimal `Program` and run semantic resolution.
+/// let program = /* build Program */ unimplemented!();
+/// let result = resolve_program(program);
+/// // `result` is `Ok(resolved_program)` on success or `Err(SemanticError)` on failure.
+/// ```
 pub fn resolve_program(program: Program) -> Result<Program, SemanticError> {
     let mut map = VariableMap::new();
     let function = resolve_function(program.function_definition, &mut map)?;
@@ -63,6 +77,32 @@ fn resolve_block(
     Ok(new_block)
 }
 
+/// Resolves names and scopes within a statement, returning a new statement with
+/// variables renamed and nested scopes enforced, or a `SemanticError`.
+///
+/// This performs a semantic resolution pass for a single `Stmt`:
+/// - `Compound` creates a new scope by cloning the provided `VariableMap` and
+///   resolves the inner block; declarations inside the block do not affect the
+///   outer map.
+/// - Expression-containing statements (`Expr`, conditionals in `If`, `Return`)
+///   are resolved recursively via `resolve_expr`.
+/// - `If` resolves its condition and both branches (the `else` branch if present).
+/// - `Break`, `Continue`, `DoWhile`, `For`, and `While` are preserved as-is
+///   (no further resolution performed by this function).
+/// - `Null` is returned unchanged.
+///
+/// Errors from expression or block resolution (e.g., undeclared variables,
+/// invalid l-values, duplicated declarations) are propagated as
+/// `SemanticError`.
+///
+/// # Examples
+///
+/// ```
+/// // Minimal example: resolving a Null statement succeeds.
+/// let mut map = VariableMap::new();
+/// let stmt = StmtKind::Null.into_stmt(Span::default());
+/// assert!(resolve_stmt(stmt, &mut map).is_ok());
+/// ```
 fn resolve_stmt(stmt: Stmt, map: &mut VariableMap) -> Result<Stmt, SemanticError> {
     match stmt.kind {
         StmtKind::Break(_) => Ok(stmt),

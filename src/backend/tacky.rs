@@ -57,6 +57,15 @@ pub enum UnaryOperator {
 }
 
 impl From<ast::UnaryOp> for UnaryOperator {
+    /// Convert an `ast::UnaryOp` into the corresponding `UnaryOperator`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let op = ast::UnaryOp::Negate;
+    /// let internal = UnaryOperator::from(op);
+    /// assert!(matches!(internal, UnaryOperator::Negate));
+    /// ```
     fn from(value: ast::UnaryOp) -> Self {
         match value {
             ast::UnaryOp::Complement => UnaryOperator::Complement,
@@ -85,6 +94,17 @@ pub enum BinaryOperator {
 }
 
 impl From<ast::BinaryOp> for BinaryOperator {
+    /// Convert an `ast::BinaryOp` into the corresponding `BinaryOperator` variant.
+    ///
+    /// Maps each AST binary operator to the backend's `BinaryOperator`. Panics if given
+    /// an AST variant that has no corresponding backend operator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let op = BinaryOperator::from(ast::BinaryOp::Add);
+    /// matches!(op, BinaryOperator::Add);
+    /// ```
     fn from(value: ast::BinaryOp) -> Self {
         match value {
             ast::BinaryOp::Add => BinaryOperator::Add,
@@ -119,6 +139,20 @@ fn emit_tacky_function(function: ast::Function) -> Function {
     Function::new(function.name, instructions)
 }
 
+/// Dispatches a single AST `BlockItem` to the appropriate emitter, appending any generated
+/// Tacky `Instruction`s into `instructions`.
+///
+/// - If `item` is a declaration, `emit_tacky_decl` is invoked.
+/// - If `item` is a statement, `emit_tacky_stmt` is invoked.
+///
+/// # Examples
+///
+/// ```no_run
+/// let item: ast::BlockItem = /* obtained from parsing */ unimplemented!();
+/// let mut instructions: Vec<Instruction> = Vec::new();
+/// emit_tacky_block_item(item, &mut instructions);
+/// // `instructions` now contains any instructions produced for `item`.
+/// ```
 fn emit_tacky_block_item(item: ast::BlockItem, instructions: &mut Vec<Instruction>) {
     match item {
         ast::BlockItem::Decl(decl) => emit_tacky_decl(decl, instructions),
@@ -126,6 +160,25 @@ fn emit_tacky_block_item(item: ast::BlockItem, instructions: &mut Vec<Instructio
     }
 }
 
+/// Emit TAC for a declaration (currently only variable declarations with an initializer).
+///
+/// If `decl` is a `DeclKind::Variable(name, Some(init))`, this constructs an assignment
+/// expression `name = init` and emits TAC for that expression, appending resulting
+/// instructions to `instructions`. Declarations without an initializer are a no-op.
+///
+/// Notes:
+/// - The artificial assignment expression uses `decl.span` as its span (TODO: use the
+///   variable-name span).
+///
+/// # Examples
+///
+/// ```
+/// // Construct a variable declaration `let x = 42;` and emit into an instruction vector.
+/// let decl = ast::Decl::new(ast::DeclKind::Variable("x".to_string(), Some(ast::Expr::new(ast::ExprKind::Constant(42), Span::default()).into())), Span::default());
+/// let mut instrs = Vec::new();
+/// emit_tacky_decl(decl, &mut instrs);
+/// // `instrs` now contains instructions that assign 42 to `x`.
+/// ```
 fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
     match decl.kind {
         ast::DeclKind::Variable(name, init) => {
@@ -144,6 +197,27 @@ fn emit_tacky_decl(decl: ast::Decl, instructions: &mut Vec<Instruction>) {
     };
 }
 
+/// Emit Tacky IR instructions for a single AST statement.
+///
+/// Translates the given `ast::Stmt` into one or more `Instruction`s and appends
+/// them to `instructions`. Control-flow constructs (e.g., `if`) are lowered to
+/// labels and conditional jumps; expression statements and `return` are emitted
+/// by delegating to `emit_tacky_expr`. Several loop/flow kinds (break,
+/// continue, `do..while`, `for`, `while`) are treated as no-ops in the current
+/// emitter.
+///
+/// # Parameters
+///
+/// - `stmt`: the AST statement to lower.
+/// - `instructions`: mutable vector that receives appended Tacky instructions.
+///
+/// # Examples
+///
+/// ```
+/// let mut instructions = Vec::new();
+/// // `some_stmt` is an `ast::Stmt` previously constructed by the frontend.
+/// // emit_tacky_stmt(some_stmt, &mut instructions);
+/// ```
 fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
     match stmt.kind {
         StmtKind::Break(_) => {}
@@ -179,6 +253,28 @@ fn emit_tacky_stmt(stmt: ast::Stmt, instructions: &mut Vec<Instruction>) {
     };
 }
 
+/// Emit Tacky IR for an AST expression, appending resulting instructions to `instructions`.
+///
+/// Returns a `Val` that represents where the expression's result can be found (a constant or a variable).
+/// Side effects: this function appends one or more `Instruction`s to the supplied `instructions` vector as it
+/// lowers the AST expression into the TAC-like Tacky IR.
+///
+/// Behavior notes:
+/// - Generates short-circuit control flow for logical `And` and `Or`.
+/// - Emits conditional and unconditional jumps, labels, copies, unary/binary ops, and returns as required by the expression.
+/// - For assignment to a variable (`lhs` is `Var`), emits code to evaluate the RHS and copies the result into the named variable, returning that variable.
+/// - If an assignment's left-hand side is not a variable, this function panics with `"invalid assignment"`.
+///
+/// Parameters:
+/// - `expr`: the AST expression to lower (consumed).
+/// - `instructions`: mutable instruction buffer to which emitted Tacky instructions are appended.
+///
+/// Returns:
+/// - `Val` indicating where the result resides (either `Val::Constant(i32)` or `Val::Var(String)`).
+///
+/// Panics:
+/// - Panics on invalid assignment LHS (non-variable).
+/// - May panic if other invariants assumed by the emitter are violated.
 fn emit_tacky_expr(expr: ast::Expr, instructions: &mut Vec<Instruction>) -> Val {
     use crate::backend::tacky::Val::{Constant, Var};
     match expr.kind {

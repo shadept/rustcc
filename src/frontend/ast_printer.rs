@@ -72,7 +72,27 @@ impl<W: Write> AstPrinter<W> {
         Ok(())
     }
 
-    /// Prints the given statement.
+    /// Print a statement to the printer's writer as a human-readable, indented form.
+    ///
+    /// Writes a textual representation of `stmt` (including nested sub-statements and expressions)
+    /// to the printer's underlying writer. The method adjusts the printer's indentation level
+    /// for nested blocks and prints explicit section headers such as `Condition:`, `Body:`,
+    /// `Initialization:`, and `Increment:` where applicable. I/O errors from the writer are
+    /// propagated via the returned `io::Result<()>`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::printer::AstPrinter;
+    /// use crate::ast::Stmt;
+    ///
+    /// let mut buf = Vec::new();
+    /// let mut printer = AstPrinter::new(&mut buf);
+    /// let stmt = Stmt::Null;
+    /// printer.print_stmt(&stmt).unwrap();
+    /// let output = String::from_utf8(buf).unwrap();
+    /// assert!(output.contains("Statement: Null"));
+    /// ```
     fn print_stmt(&mut self, stmt: &Stmt) -> io::Result<()> {
         self.print_indent()?;
         match &stmt.kind {

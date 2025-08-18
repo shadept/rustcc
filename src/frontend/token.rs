@@ -1,4 +1,4 @@
-﻿use crate::frontend::source::Span;
+use crate::frontend::source::Span;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +18,21 @@ pub enum Keyword {
 impl TryFrom<&str> for Keyword {
     type Error = ();
 
+    /// Attempts to convert a string slice into a `Keyword`.
+    ///
+    /// Returns `Ok(Keyword::...)` for exact matches of the language's reserved words
+    /// ("break", "continue", "do", "else", "if", "int", "return", "void", "while"),
+    /// and `Err(())` if the input does not match any keyword.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::frontend::token::Keyword;
+    ///
+    /// assert_eq!(Keyword::try_from("if"), Ok(Keyword::If));
+    /// assert_eq!(Keyword::try_from("while"), Ok(Keyword::While));
+    /// assert!(Keyword::try_from("notakeyword").is_err());
+    /// ```
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "break" => Ok(Keyword::Break),
@@ -35,6 +50,15 @@ impl TryFrom<&str> for Keyword {
 }
 
 impl Display for Keyword {
+    /// Formats the `Keyword` as its canonical source text (e.g., `Keyword::If` -> "if").
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crate::frontend::token::Keyword;
+    /// assert_eq!(format!("{}", Keyword::Break), "break");
+    /// assert_eq!(format!("{}", Keyword::While), "while");
+    /// ```
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Keyword::Break => write!(f, "break"),

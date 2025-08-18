@@ -1,4 +1,4 @@
-﻿//! Module for managing source code files and their metadata.
+//! Module for managing source code files and their metadata.
 //!
 //! This module provides core abstractions for working with source files,
 //! including file names, content management, and source code regions (spans).
@@ -16,6 +16,16 @@ pub enum FileName {
 }
 
 impl From<PathBuf> for FileName {
+    /// Converts a `PathBuf` into a `FileName::Real` variant.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// let p = PathBuf::from("src/lib.rs");
+    /// let f = FileName::from(p.clone());
+    /// assert_eq!(f, FileName::Real(p));
+    /// ```
     fn from(path: PathBuf) -> Self {
         FileName::Real(path)
     }
@@ -34,6 +44,31 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
+    /// Create a `SourceFile` by reading the file at `name`.
+    ///
+    /// The file is read as UTF-8 text (this function will panic if reading or UTF-8 decoding fails).
+    /// If the file starts with a UTF-8 BOM (U+FEFF) it is removed. If the file starts with a
+    /// shebang (`#!`), the first line (up to and including the first newline, or the whole content
+    /// if no newline) is removed. The returned `SourceFile` has `FileName::Real(name)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file cannot be read or is not valid UTF-8 (due to the use of `read_to_string().unwrap()`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// use std::fs;
+    /// // prepare a temporary file
+    /// let mut p = std::env::temp_dir();
+    /// p.push("example_source.rs");
+    /// fs::write(&p, "#!/usr/bin/env rust\nfn main() {}\n").unwrap();
+    ///
+    /// let sf = crate::frontend::source::SourceFile::new_from_file(p.clone());
+    /// assert!(sf.content.contains("fn main"));
+    /// assert_eq!(sf.name, crate::frontend::source::FileName::Real(p));
+    /// ```
     pub fn new_from_file(name: PathBuf) -> Self {
         let mut content = std::fs::read_to_string(&name).unwrap();
 
@@ -80,6 +115,24 @@ impl Span {
 impl Add for Span {
     type Output = Span;
 
+    /// Extends the left span to cover through the end of the right span.
+    ///
+    /// The two spans must reference the same source; this function will panic if
+    /// they come from different `SourceFile` instances.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// // construct an anonymous source and two spans within it
+    /// let src = Arc::new(crate::frontend::source::SourceFile::new_anon("abcdef"));
+    /// let a = crate::frontend::source::Span::new(src.clone(), 0, 2); // covers "ab"
+    /// let b = crate::frontend::source::Span::new(src.clone(), 2, 5); // covers "cde"
+    /// let combined = a + b;
+    /// assert_eq!(combined.start, 0);
+    /// assert_eq!(combined.end, 5);
+    /// assert!(Arc::ptr_eq(&combined.source, &src));
+    /// ```
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.source, rhs.source);
         Span {

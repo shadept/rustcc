@@ -84,6 +84,29 @@ impl Parser {
         Err(ParserError::UnexpectedToken(self.peek().unwrap()))
     }
 
+    /// Parse a single statement from the token stream.
+    ///
+    /// Parses and returns one statement (Stmt) and advances the parser past it. Supported forms:
+    /// - Empty statement (`;`) -> `StmtKind::Null`
+    /// - Block (`{ ... }`) -> parsed via `parse_block()` (no trailing semicolon required)
+    /// - `break` and `continue` (no label support yet)
+    /// - `do` ... `while` (produces `StmtKind::DoWhile`)
+    /// - `for` (recognized but not implemented; currently `todo!()`)
+    /// - `if` / `if ... else` (delegates to `parse_if_stmt`)
+    /// - `return <expr>;` (parses a return with optional expression)
+    /// - `while (<cond>) <stmt>`
+    /// - Expression statements ending with `;` -> `StmtKind::Expr`
+    ///
+    /// The parser requires a terminating semicolon for all statement forms except blocks. On success
+    /// returns `Ok(Stmt)`; on failure returns a `ParserError` (e.g. unexpected token or EOF).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Given a mutable `parser: Parser` already initialized with tokens:
+    /// // let mut parser = /* ... */;
+    /// // let stmt = parser.parse_statement().expect("failed to parse statement");
+    /// ```
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         if let Some(tok) = self.match_symbol(Symbol::Semicolon) {
             return Ok(Stmt::new(StmtKind::Null, tok.span));
@@ -228,12 +251,45 @@ impl Parser {
         Ok(left)
     }
 
+    /// Parse the middle expression of a ternary conditional and consume the following `:` token.
+    ///
+    /// This reads an expression (the "true" branch) as it appears between `?` and `:` in a
+    /// ternary `cond ? mid : else` expression, and then expects and consumes a colon.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ParserError` if parsing the expression fails or if the next token is not a `:`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // assuming `parser` is a `Parser` positioned after the `?` of a ternary expression:
+    /// let mid = parser.parse_conditional_middle().unwrap();
+    /// ```
     fn parse_conditional_middle(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_expression(0)?;
         self.expect_symbol(Symbol::Colon)?;
         Ok(expr)
     }
 
+    /// Parses a primary or unary factor and returns its expression node.
+    ///
+    /// Recognizes:
+    /// - Unary prefix operators (`~`, `-`, `!`) applied recursively to a factor.
+    /// - Integer literals (produces `ExprKind::Constant`).
+    /// - Identifiers (produces `ExprKind::Var`).
+    /// - Parenthesized expressions `( ... )` (returns the inner expression).
+    ///
+    /// Returns `Err(ParserError::UnexpectedToken(_))` when the next token is not a valid factor,
+    /// or the EOF error produced by the parser's lookahead helper when input ends unexpectedly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Given a mutable `parser: Parser` positioned at a factor:
+    /// let expr = parser.parse_factor().unwrap();
+    /// // `expr` will be an `Expr` such as `ExprKind::Constant` or `ExprKind::Var` or a unary expression.
+    /// ```
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
         let token = self.peek_or_eof()?;
         if let Some(op) = self.parse_unary_op(&token) {
@@ -341,24 +397,90 @@ impl Parser {
         }
     }
 
+    /// Returns the next token from the input stream without consuming it.
+    ///
+    /// This performs a peek on the parser's internal token iterator and returns a clone
+    /// of the next `Token` if one is available, or `None` if the stream is exhausted.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let next = parser.peek();
+    /// if let Some(token) = next {
+    ///     println!("Next token: {:?}", token);
+    /// } else {
+    ///     println!("End of input");
+    /// }
+    /// ```
     fn peek(&self) -> Option<Token> {
         self.tokens.clone().next()
     }
 
+    /// Returns the next token without consuming it, or an EOF `ParserError` if no token remains.
+    ///
+    /// This performs a lookahead using the parser's token iterator clone; it does not advance the parser's position.
+    /// On end-of-input it returns `Err(ParserError::EOF(span))` where `span` marks the end of the source.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Given a mutable `parser`, inspect the next token without consuming it:
+    /// let next = parser.peek_or_eof()?;
+    /// println!("next token = {:?}", next);
+    /// ```
     fn peek_or_eof(&self) -> Result<Token, ParserError> {
         self.tokens.clone().next().ok_or_else(|| self.eof())
     }
 
+    /// Returns the token after the next one (lookahead by two) without consuming any tokens.
+    ///
+    /// This performs a non-destructive two-token lookahead: it clones the internal token iterator,
+    /// advances the clone twice, and returns the second token if present.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // assuming `parser` is a Parser with at least two remaining tokens
+    /// if let Some(tok) = parser.peek2() {
+    ///     // `tok` is the token after the next one; calling `peek2` does not consume tokens
+    ///     println!("{tok}");
+    /// }
+    /// ```
     fn peek2(&self) -> Option<Token> {
         let mut l = self.tokens.clone();
         l.next();
         l.next()
     }
 
+    /// Advances the token stream by one and returns the consumed token, or `None` if at end of input.
+    ///
+    /// This consumes the next token from the parser's internal token iterator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // given a parser with tokens [Token::Int, Token::Ident("x")]
+    /// // calling `advance` returns the first token and removes it from the stream
+    /// let mut parser = /* Parser::new(...) */ unimplemented!();
+    /// let first = parser.advance();
+    /// assert!(first.is_some());
+    /// ```
     fn advance(&mut self) -> Option<Token> {
         self.tokens.next()
     }
 
+    /// Consume and return the next token's identifier string.
+    ///
+    /// Returns the identifier if the next token is a `TokenKind::Identifier` (and advances the token
+    /// stream). If the next token is a different kind, returns `ParserError::UnexpectedToken`. If the
+    /// token stream is exhausted, returns an EOF `ParserError`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // assuming `parser` is a `&mut Parser` positioned at an identifier
+    /// let name = parser.expect_identifier().unwrap();
+    /// ```
     fn expect_identifier(&mut self) -> Result<String, ParserError> {
         let token = self.peek_or_eof()?;
         match token.kind {
@@ -370,6 +492,20 @@ impl Parser {
         }
     }
 
+    /// Ensures the next token is the specified keyword and consumes it.
+    ///
+    /// If the upcoming token matches `keyword`, it is consumed and returned. If the input
+    /// has reached EOF, an `ParserError::EOF` is returned. If the next token is present but
+    /// is not the requested keyword, a `ParserError::UnexpectedToken` containing that token
+    /// is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // assuming `parser` has `Keyword::Return` as the next token
+    /// let tok = parser.expect_keyword(Keyword::Return).unwrap();
+    /// assert!(matches!(tok.kind, TokenKind::Keyword(Keyword::Return)));
+    /// ```
     fn expect_keyword(&mut self, keyword: Keyword) -> Result<Token, ParserError> {
         let token = self.peek_or_eof()?;
         if matches!(&token.kind, TokenKind::Keyword(kw) if *kw == keyword) {
@@ -379,6 +515,19 @@ impl Parser {
         }
     }
 
+    /// Consume and return the next token if it is the specified symbol.
+    ///
+    /// On success returns the consumed `Token`. If the next token is EOF, this
+    /// propagates the parser's EOF `ParserError`; if the next token exists but is
+    /// not the requested symbol, returns `ParserError::UnexpectedToken`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // parse a semicolon token from the stream
+    /// let tok = parser.expect_symbol(Symbol::Semicolon).unwrap();
+    /// assert!(matches!(tok.kind, TokenKind::Symbol(Symbol::Semicolon)));
+    /// ```
     fn expect_symbol(&mut self, symbol: Symbol) -> Result<Token, ParserError> {
         let token = self.peek_or_eof()?;
         if matches!(&token.kind, TokenKind::Symbol(sym) if *sym == symbol) {

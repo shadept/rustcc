@@ -57,6 +57,42 @@ impl Display for MainError {
 
 impl Error for MainError {}
 
+/// Entry point for the CLI-driven compiler pipeline.
+///
+/// This function parses command-line arguments, selects a compilation stage, and runs the input
+/// C source file through the sequential pipeline:
+/// Lex -> Parse -> Validate -> Tacky IR -> Codegen (assembly) -> Code emission.
+///
+/// Command-line forms:
+/// - `program <input.c>` — run full pipeline (CodeEmit).
+/// - `program --lex <input.c>`
+/// - `program --parse <input.c>`
+/// - `program --validate <input.c>`
+/// - `program --tacky <input.c>`
+/// - `program --codegen <input.c>`
+///
+/// Behavior:
+/// - For stage-specific invocations, the function runs the pipeline up to that stage and then
+///   prints or emits the stage output as appropriate (e.g., token kinds for `--lex`, pretty
+///   printed AST for `--parse`).
+/// - On invalid arguments or unknown stage flags the function prints usage and returns an error.
+///
+/// Returns:
+/// - `Ok(())` on successful completion of the requested stage (including stage-limited runs).
+/// - `Err(anyhow::Error)` if argument parsing fails or any pipeline step returns an error.
+///
+/// Side effects:
+/// - Reads the input file (and a preprocessed `.i` file on non-Windows), may write assembly and
+///   executable files, and may invoke the system C toolchain to produce an executable.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Run full compilation on `example.c` (equivalent to invoking the compiled binary)
+/// // $ program example.c
+/// let _ = std::env::set_var("RUST_BACKTRACE", "0");
+/// // Note: running `main()` directly in doctests is `no_run` to avoid side effects.
+/// ```
 fn main() -> Result<(), anyhow::Error> {
     // Enable ANSI colors on Windows
     #[cfg(windows)]
@@ -134,6 +170,20 @@ fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// Tokenizes the given input file (optionally after running the C preprocessor) and returns the token list and a shared SourceFile.
+///
+/// On non-Windows targets this runs `clang -E -P <input_file> -o <preprocessed_file>` and tokenizes the preprocessed output; on Windows it tokenizes the original input file directly.
+/// Returns `Ok((tokens, Arc<SourceFile>))` on success. If external preprocessing or file operations fail this function returns an `Err` (from the underlying I/O/command wait). If lexical analysis fails, a diagnostic is printed to stderr and the process exits with code 1.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// // assume `run_lexer` is in scope
+/// let (tokens, source) = run_lexer("example.c", "example.i").expect("lexing failed");
+/// assert!(!tokens.is_empty());
+/// let _source: Arc<_> = source;
+/// ```
 fn run_lexer(
     input_file: &str,
     preprocessed_file: &str,
