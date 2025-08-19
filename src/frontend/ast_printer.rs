@@ -76,6 +76,12 @@ impl<W: Write> AstPrinter<W> {
     fn print_stmt(&mut self, stmt: &Stmt) -> io::Result<()> {
         self.print_indent()?;
         match &stmt.kind {
+            StmtKind::Break(_) => {
+                writeln!(self.writer, "Statement: Break")?;
+            }
+            StmtKind::Continue(_) => {
+                writeln!(self.writer, "Statement: Continue")?;
+            }
             StmtKind::Compound(block) => {
                 writeln!(self.writer, "Statement: Compound")?;
                 self.indent += 2;
@@ -84,11 +90,69 @@ impl<W: Write> AstPrinter<W> {
                 }
                 self.indent -= 2;
             }
+            StmtKind::DoWhile(body, cond, _) => {
+                writeln!(self.writer, "Statement: Do-While")?;
+                self.indent += 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Body:")?;
+                self.indent += 2;
+                self.print_stmt(body)?;
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Condition:")?;
+                self.indent += 2;
+                self.print_expr(cond)?;
+                self.indent -= 4;
+            }
             StmtKind::Expr(expr) => {
                 writeln!(self.writer, "Statement: Expression")?;
                 self.indent += 2;
                 self.print_expr(expr)?;
                 self.indent -= 2;
+            }
+            StmtKind::For(init, cond, incr, body, _) => {
+                writeln!(self.writer, "Statement: For")?;
+                self.indent += 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Initialization:")?;
+                self.indent += 2;
+                match init {
+                    ForInit::Decl(decl) => self.print_decl(decl)?,
+                    ForInit::Expr(expr_opt) => {
+                        if let Some(expr) = expr_opt {
+                            self.print_expr(expr)?;
+                        } else {
+                            self.print_indent()?;
+                            writeln!(self.writer, "Empty")?;
+                        }
+                    }
+                }
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Condition:")?;
+                self.indent += 2;
+                if let Some(expr) = cond {
+                    self.print_expr(expr)?;
+                } else {
+                    self.print_indent()?;
+                    writeln!(self.writer, "Empty")?;
+                }
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Increment:")?;
+                self.indent += 2;
+                if let Some(expr) = incr {
+                    self.print_expr(expr)?;
+                } else {
+                    self.print_indent()?;
+                    writeln!(self.writer, "Empty")?;
+                }
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Body:")?;
+                self.indent += 2;
+                self.print_stmt(body)?;
+                self.indent -= 4;
             }
             StmtKind::If(condition, then_stmt, else_stmt) => {
                 writeln!(self.writer, "Statement: If")?;
@@ -120,6 +184,20 @@ impl<W: Write> AstPrinter<W> {
                 self.indent += 2;
                 self.print_expr(expr)?;
                 self.indent -= 2;
+            }
+            StmtKind::While(cond, body, _) => {
+                writeln!(self.writer, "Statement: While")?;
+                self.indent += 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Condition:")?;
+                self.indent += 2;
+                self.print_expr(cond)?;
+                self.indent -= 2;
+                self.print_indent()?;
+                writeln!(self.writer, "Body:")?;
+                self.indent += 2;
+                self.print_stmt(body)?;
+                self.indent -= 4;
             }
         }
         Ok(())
