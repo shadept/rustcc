@@ -160,7 +160,7 @@ fn run_lexer(
     }
 
     // Create a SourceFile
-    let source_file = SourceFile::new_from_file(PathBuf::from(file_path));
+    let source_file = SourceFile::new_from_file(PathBuf::from(file_path))?;
     let source_file = Arc::new(source_file);
     let lexer = Lexer::new(source_file.clone());
     match lexer.to_tokens() {

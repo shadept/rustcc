@@ -34,8 +34,8 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    pub fn new_from_file(name: PathBuf) -> Self {
-        let mut content = std::fs::read_to_string(&name).unwrap();
+    pub fn new_from_file(name: PathBuf) -> std::io::Result<Self> {
+        let mut content = std::fs::read_to_string(&name)?;
 
         // Skip BOM
         if content.starts_with("\u{FEFF}") {
@@ -48,10 +48,10 @@ impl SourceFile {
             content.drain(..end);
         }
 
-        SourceFile {
+        Ok(SourceFile {
             name: FileName::Real(name),
             content,
-        }
+        })
     }
 
     pub fn new_anon<S: Into<String>>(content: S) -> Self {

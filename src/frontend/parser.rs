@@ -132,7 +132,6 @@ impl Parser {
                 }
                 Keyword::While => {
                     self.advance().unwrap();
-                    self.expect_keyword(Keyword::While)?;
                     self.expect_symbol(Symbol::OpenParen)?;
                     let expr = self.parse_expression(0)?;
                     self.expect_symbol(Symbol::CloseParen)?;
