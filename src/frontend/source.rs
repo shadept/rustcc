@@ -44,7 +44,8 @@ impl SourceFile {
 
         // Skip shebang
         if content.starts_with("#!") {
-            content.drain(..=content.find('\n').unwrap_or(content.len()));
+            let end = content.find('\n').map(|i| i + 1).unwrap_or(content.len());
+            content.drain(..end);
         }
 
         SourceFile {
